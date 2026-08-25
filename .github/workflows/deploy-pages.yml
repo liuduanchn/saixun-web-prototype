@@ -34,11 +34,11 @@ jobs:
       - name: Test application state
         run: npm run test:app
 
-      - name: Test hosting worker
-        run: npm run test:sites
-
       - name: Build and verify Pages paths
         run: npm run test:pages
+
+      - name: Test hosting worker
+        run: npm run test:sites
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
