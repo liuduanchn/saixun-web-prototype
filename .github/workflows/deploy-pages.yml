@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_DEMO_PASSWORD_HASH: ${{ vars.DEMO_PASSWORD_HASH }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -30,6 +32,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify demo password hash configuration
+        shell: bash
+        run: |
+          if [[ ! "$VITE_DEMO_PASSWORD_HASH" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::Repository variable DEMO_PASSWORD_HASH is missing or invalid."
+            exit 1
+          fi
 
       - name: Test application state
         run: npm run test:app

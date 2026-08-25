@@ -4,19 +4,27 @@ import { loginWithStorage } from "./appState.js";
 
 export function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("teacher");
-  const [password, setPassword] = useState("123456");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
-    const result = loginWithStorage(window.localStorage, username, password);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    setSubmitting(true);
+    try {
+      const result = await loginWithStorage(window.localStorage, username, password, import.meta.env.VITE_DEMO_PASSWORD_HASH);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setError("");
+      onLogin(result.user);
+    } catch {
+      setError("登录校验失败，请重试");
+    } finally {
+      setSubmitting(false);
     }
-    setError("");
-    onLogin(result.user);
   };
 
   return (
@@ -39,11 +47,9 @@ export function LoginScreen({ onLogin }) {
           <label><span>账号</span><div className="login-input"><User size={20} /><input aria-label="账号" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></div></label>
           <label><span>密码</span><div className="login-input"><LockKey size={20} /><input aria-label="密码" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}</button></div></label>
           {error && <p className="login-error" role="alert">{error}</p>}
-          <button className="login-submit" type="submit"><SignIn size={22} weight="bold" />进入系统</button>
-          <div className="demo-credentials"><strong>演示账号</strong><span>账号 teacher</span><span>密码 123456</span></div>
+          <button className="login-submit" type="submit" disabled={submitting}><SignIn size={22} weight="bold" />{submitting ? "正在登录…" : "进入系统"}</button>
         </form>
       </section>
     </main>
   );
 }
-

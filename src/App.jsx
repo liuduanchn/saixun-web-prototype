@@ -11,6 +11,7 @@ import {
 } from "./appState.js";
 import { LoginScreen } from "./LoginScreen.jsx";
 import { WorkspacePage } from "./pages.jsx";
+import { getSidebarPresentation } from "./sidebarState.js";
 
 const stages = [
   { id: 1, label: "赛项理解", state: "done" }, { id: 2, label: "方案设计", state: "done" },
@@ -58,11 +59,13 @@ export function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifications, setNotifications] = useState(initialNotifications);
   const [toast, setToast] = useState("");
   const [created, setCreated] = useState(false);
   const taskSummary = useMemo(() => `${tasks.filter((task) => task.done).length}/${tasks.length}`, [tasks]);
   const unreadNotificationCount = useMemo(() => getUnreadNotificationCount(notifications), [notifications]);
+  const sidebarPresentation = getSidebarPresentation(sidebarCollapsed);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -118,19 +121,23 @@ export function App() {
     setActiveNav("竞赛项目驾驶舱");
     setUser(null);
   };
+  const toggleSidebar = () => {
+    setProfileOpen(false);
+    setSidebarCollapsed((value) => !value);
+  };
 
   if (!user) return <LoginScreen onLogin={setUser} />;
 
   return (
-    <div className="app-shell">
+    <div className={sidebarPresentation.shellClassName}>
       <aside className="sidebar" aria-label="主导航">
         <div className="brand-row">
           <div><strong>赛训智舱</strong><span>AI 备赛教练</span></div>
-          <AppIconButton label="收起导航" onClick={() => showToast("导航保持展开，便于评审演示")}><ListChecks size={22} /></AppIconButton>
+          <AppIconButton label={sidebarPresentation.toggleLabel} title={sidebarPresentation.toggleLabel} aria-pressed={sidebarPresentation.togglePressed} onClick={toggleSidebar}><ListChecks size={22} /></AppIconButton>
         </div>
         <nav className="nav-list">
           {navItems.map(({ label, icon: Icon }, index) => (
-            <button key={label} aria-label={label} aria-current={activeNav === label ? "page" : undefined} className={`nav-item ${activeNav === label ? "active" : ""} ${index === 6 ? "nav-divider" : ""}`} onClick={() => handleNav(label)}>
+            <button key={label} aria-label={label} title={sidebarCollapsed ? label : undefined} aria-current={activeNav === label ? "page" : undefined} className={`nav-item ${activeNav === label ? "active" : ""} ${index === 6 ? "nav-divider" : ""}`} onClick={() => handleNav(label)}>
               <Icon size={22} weight={activeNav === label ? "fill" : "regular"} /><span>{label}</span>
             </button>
           ))}

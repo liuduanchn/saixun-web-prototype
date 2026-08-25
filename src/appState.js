@@ -18,8 +18,18 @@ const pageKeys = Object.freeze({
   "设置中心": "settings",
 });
 
-export function authenticate(username, password) {
-  if (username === "teacher" && password === "123456") {
+export async function hashPassword(password) {
+  const encoded = new TextEncoder().encode(password);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function authenticate(username, password, configuredPasswordHash) {
+  if (!/^[a-f\d]{64}$/i.test(configuredPasswordHash ?? "")) {
+    return { ok: false, error: "登录配置缺失，请联系管理员" };
+  }
+
+  if (username === demoUser.username && await hashPassword(password) === configuredPasswordHash.toLowerCase()) {
     return { ok: true, user: { ...demoUser } };
   }
 
@@ -45,8 +55,8 @@ export function saveSession(storage, user) {
   }
 }
 
-export function loginWithStorage(storage, username, password) {
-  const result = authenticate(username, password);
+export async function loginWithStorage(storage, username, password, configuredPasswordHash) {
+  const result = await authenticate(username, password, configuredPasswordHash);
   if (!result.ok) return result;
   if (saveSession(storage, result.user)) return result;
   return { ok: false, error: "无法保存登录状态，请检查浏览器存储权限" };

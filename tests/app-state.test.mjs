@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   authenticate,
   clearSession,
+  hashPassword,
   loginWithStorage,
   loadSession,
   getUnreadNotificationCount,
@@ -23,28 +24,41 @@ function createStorage() {
   };
 }
 
-test("accepts the configured teacher demo credentials", () => {
-  assert.deepEqual(authenticate("teacher", "123456"), {
+const TEST_PASSWORD_HASH = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+test("hashes a password with SHA-256 before credential comparison", async () => {
+  assert.equal(await hashPassword("abc"), TEST_PASSWORD_HASH);
+});
+
+test("accepts the configured teacher demo credentials", async () => {
+  assert.deepEqual(await authenticate("teacher", "abc", TEST_PASSWORD_HASH), {
     ok: true,
     user: { username: "teacher", name: "张老师", role: "指导教师" },
   });
 });
 
-test("rejects credentials that do not exactly match the demo account", () => {
-  assert.deepEqual(authenticate("teacher", "12345"), {
+test("rejects credentials that do not exactly match the demo account", async () => {
+  assert.deepEqual(await authenticate("teacher", "wrong", TEST_PASSWORD_HASH), {
     ok: false,
     error: "账号或密码错误，请使用测试账号登录",
   });
 });
 
-test("does not report a persistent login when browser storage rejects the session", () => {
+test("reports a configuration error when no password hash is provided", async () => {
+  assert.deepEqual(await authenticate("teacher", "abc", ""), {
+    ok: false,
+    error: "登录配置缺失，请联系管理员",
+  });
+});
+
+test("does not report a persistent login when browser storage rejects the session", async () => {
   const unavailableStorage = {
     getItem() { return null; },
     setItem() { throw new Error("storage disabled"); },
     removeItem() {},
   };
 
-  assert.deepEqual(loginWithStorage(unavailableStorage, "teacher", "123456"), {
+  assert.deepEqual(await loginWithStorage(unavailableStorage, "teacher", "abc", TEST_PASSWORD_HASH), {
     ok: false,
     error: "无法保存登录状态，请检查浏览器存储权限",
   });
