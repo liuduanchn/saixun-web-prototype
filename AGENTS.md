@@ -15,3 +15,4 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - The core demo interaction is: inspect the highest scoring risk, generate a revision task, and see it appear in this week's task list.
 - Require local prototype login with the demonstration credentials `teacher / 123456`; keep authentication frontend-only and do not connect a real identity service.
 - Every sidebar item must open a distinct workspace page. Preserve the existing dashboard and use the six images under `视频界面原型` as the visual/content reference for the core competition workflow pages.
+- The top-right notification badge represents real unread items. Keep the notification panel, per-item read state, mark-all-read action, outside-click dismissal, and mutual exclusion with the account menu working together.

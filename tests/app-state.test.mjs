@@ -6,6 +6,10 @@ import {
   clearSession,
   loginWithStorage,
   loadSession,
+  getUnreadNotificationCount,
+  markAllNotificationsRead,
+  markNotificationRead,
+  resolveNotificationTarget,
   resolvePage,
   saveSession,
 } from "../src/appState.js";
@@ -85,4 +89,43 @@ test("resolves every supported menu label to a distinct page key", () => {
 
 test("falls back to the dashboard for an unknown menu label", () => {
   assert.equal(resolvePage("不存在的菜单"), "dashboard");
+});
+
+test("marks one notification read without mutating the source list", () => {
+  const notifications = [
+    { id: 1, read: false },
+    { id: 2, read: false },
+  ];
+
+  const updated = markNotificationRead(notifications, 1);
+
+  assert.deepEqual(updated, [
+    { id: 1, read: true },
+    { id: 2, read: false },
+  ]);
+  assert.equal(getUnreadNotificationCount(updated), 1);
+  assert.equal(notifications[0].read, false);
+});
+
+test("marks every notification read and clears the unread count", () => {
+  const updated = markAllNotificationsRead([
+    { id: 1, read: false },
+    { id: 2, read: true },
+  ]);
+
+  assert.deepEqual(updated, [
+    { id: 1, read: true },
+    { id: 2, read: true },
+  ]);
+  assert.equal(getUnreadNotificationCount(updated), 0);
+});
+
+test("resolves each notification to its configured workspace page", () => {
+  assert.equal(resolveNotificationTarget({ targetNav: "作品诊断中心" }), "作品诊断中心");
+  assert.equal(resolveNotificationTarget({ targetNav: "训练任务中心" }), "训练任务中心");
+});
+
+test("falls back to the dashboard when a notification target is invalid", () => {
+  assert.equal(resolveNotificationTarget({ targetNav: "不存在的页面" }), "竞赛项目驾驶舱");
+  assert.equal(resolveNotificationTarget(null), "竞赛项目驾驶舱");
 });

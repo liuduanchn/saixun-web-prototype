@@ -5,7 +5,10 @@ import {
   MagnifyingGlass, MonitorPlay, PaperPlaneTilt, ShieldWarning, SignOut, Sparkle,
   Package, Student, UserCircle, UsersThree, WarningCircle, X,
 } from "@phosphor-icons/react";
-import { clearSession, loadSession, resolvePage } from "./appState.js";
+import {
+  clearSession, getUnreadNotificationCount, loadSession, markAllNotificationsRead,
+  markNotificationRead, resolveNotificationTarget, resolvePage,
+} from "./appState.js";
 import { LoginScreen } from "./LoginScreen.jsx";
 import { WorkspacePage } from "./pages.jsx";
 
@@ -37,20 +40,29 @@ const detailRows = [
   { label: "前后对比", status: "缺失", detail: "缺少优化前后的核心指标对比数据。" },
 ];
 
-function AppIconButton({ children, label, onClick }) {
-  return <button className="icon-button" aria-label={label} onClick={onClick}>{children}</button>;
+const initialNotifications = [
+  { id: 1, category: "作品审核", title: "李同学提交了作品材料", detail: "作品说明书与演示材料等待教师审核。", time: "8-24 10:32", targetNav: "作品诊断中心", read: false },
+  { id: 2, category: "任务复核", title: "王同学提交了修改任务结果", detail: "应用成效补证任务已完成，等待教师复核。", time: "8-24 09:18", targetNav: "训练任务中心", read: false },
+];
+
+function AppIconButton({ children, label, onClick, ...props }) {
+  return <button className="icon-button" aria-label={label} onClick={onClick} {...props}>{children}</button>;
 }
 
 export function App() {
   const profileAreaRef = useRef(null);
+  const notificationAreaRef = useRef(null);
   const [user, setUser] = useState(() => loadSession(window.localStorage));
   const [activeNav, setActiveNav] = useState("竞赛项目驾驶舱");
   const [tasks, setTasks] = useState(initialTasks);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState(initialNotifications);
   const [toast, setToast] = useState("");
   const [created, setCreated] = useState(false);
   const taskSummary = useMemo(() => `${tasks.filter((task) => task.done).length}/${tasks.length}`, [tasks]);
+  const unreadNotificationCount = useMemo(() => getUnreadNotificationCount(notifications), [notifications]);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -62,6 +74,17 @@ export function App() {
     document.addEventListener("pointerdown", closeOnOutsideClick);
     return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
   }, [profileOpen]);
+
+  useEffect(() => {
+    if (!notificationOpen) return undefined;
+
+    const closeOnOutsideClick = (event) => {
+      if (!notificationAreaRef.current?.contains(event.target)) setNotificationOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [notificationOpen]);
 
   const showToast = (message) => {
     setToast(message);
@@ -78,10 +101,20 @@ export function App() {
   };
 
   const toggleTask = (id) => setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task));
-  const handleNav = (label) => setActiveNav(label);
+  const handleNav = (label) => {
+    setActiveNav(label);
+    setNotificationOpen(false);
+  };
+  const openNotification = (notification) => {
+    setNotifications((current) => markNotificationRead(current, notification.id));
+    setActiveNav(resolveNotificationTarget(notification));
+    setNotificationOpen(false);
+    showToast(`已打开：${notification.title}`);
+  };
   const logout = () => {
     clearSession(window.localStorage);
     setProfileOpen(false);
+    setNotificationOpen(false);
     setActiveNav("竞赛项目驾驶舱");
     setUser(null);
   };
@@ -105,7 +138,7 @@ export function App() {
         <div className="user-block" ref={profileAreaRef}>
           <UserCircle size={38} weight="fill" />
           <div><strong>{user.name}</strong><span>{user.role}</span></div>
-          <AppIconButton label="展开账户菜单" onClick={() => setProfileOpen((value) => !value)}><CaretDown size={16} /></AppIconButton>
+          <AppIconButton label="展开账户菜单" onClick={() => { setNotificationOpen(false); setProfileOpen((value) => !value); }}><CaretDown size={16} /></AppIconButton>
           {profileOpen && <div className="profile-menu">
             <button onClick={() => showToast("已切换到学生团队视角")}><UsersThree size={17} />切换团队视角</button>
             <button onClick={logout}><SignOut size={17} />退出登录</button>
@@ -118,7 +151,17 @@ export function App() {
         <header className="topbar">
           <button className="project-switch" onClick={() => showToast("当前仅展示 AI应用开发赛")}><strong>{activeNav === "竞赛项目驾驶舱" ? "AI应用开发赛" : activeNav}</strong><CaretDown size={18} /></button>
           <div className="top-actions">
-            <AppIconButton label="通知" onClick={() => showToast("你有 2 条待处理通知")}><Bell size={22} /><span className="notification-dot">2</span></AppIconButton>
+            <div className="notification-area" ref={notificationAreaRef}>
+              <AppIconButton label={`通知，${unreadNotificationCount} 条未读`} aria-expanded={notificationOpen} aria-haspopup="dialog" onClick={() => { setProfileOpen(false); setNotificationOpen((value) => !value); }}><Bell size={22} />{unreadNotificationCount > 0 && <span className="notification-dot">{unreadNotificationCount}</span>}</AppIconButton>
+              {notificationOpen && <section className="notification-panel" aria-label="通知中心">
+                <header><div><h2>通知中心</h2><span>{unreadNotificationCount > 0 ? `${unreadNotificationCount} 条未读` : "全部已读"}</span></div><button disabled={unreadNotificationCount === 0} onClick={() => setNotifications((current) => markAllNotificationsRead(current))}>全部标为已读</button></header>
+                <div className="notification-list">{notifications.map((notification) => <button className={`notification-item ${notification.read ? "read" : "unread"}`} key={notification.id} onClick={() => openNotification(notification)}>
+                  <span className="notification-symbol">{notification.id === 1 ? <FileText size={21} /> : <ListChecks size={21} />}</span>
+                  <span className="notification-copy"><small>{notification.category}</small><strong>{notification.title}</strong><p>{notification.detail}</p><time>{notification.time}</time></span>
+                  <span className="notification-link">查看详情<CaretRight size={14} /></span>
+                </button>)}</div>
+              </section>}
+            </div>
             <span className="today">2026-08-24&nbsp;&nbsp;星期一</span>
           </div>
         </header>
@@ -170,7 +213,7 @@ export function App() {
                 <div className="legend"><span><i className="covered" />已覆盖评分点</span><strong>18</strong></div><div className="legend"><span><i />未覆盖评分点</span><strong>7</strong></div>
                 <button className="secondary-button" onClick={() => setDrawerOpen(true)}>查看详情</button>
               </section>
-              <section className="review-panel">
+              <section className="review-panel" id="pending-review">
                 <div className="section-heading"><h2>待我审核</h2><strong>2 项</strong></div>
                 <button onClick={() => showToast("已打开李同学提交的作品材料")}><span><strong>李同学</strong> 提交的作品材料</span><small>8-24 10:32</small></button>
                 <button onClick={() => showToast("已打开王同学的修改任务结果")}><span><strong>王同学</strong> 修改任务结果</span><small>8-24 09:18</small></button>

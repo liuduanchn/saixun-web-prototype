@@ -64,3 +64,19 @@ export function clearSession(storage) {
 export function resolvePage(label) {
   return pageKeys[label] ?? "dashboard";
 }
+
+export function markNotificationRead(notifications, id) {
+  return notifications.map((notification) => notification.id === id ? { ...notification, read: true } : notification);
+}
+
+export function markAllNotificationsRead(notifications) {
+  return notifications.map((notification) => notification.read ? notification : { ...notification, read: true });
+}
+
+export function getUnreadNotificationCount(notifications) {
+  return notifications.filter((notification) => !notification.read).length;
+}
+
+export function resolveNotificationTarget(notification) {
+  return Object.hasOwn(pageKeys, notification?.targetNav) ? notification.targetNav : "竞赛项目驾驶舱";
+}
