@@ -6,6 +6,8 @@
 
 围绕评分标准组织任务、诊断作品证据、开展模拟答辩并沉淀赛后经验，让竞赛训练从“经验驱动”走向“标准驱动、证据驱动和持续改进”。
 
+[在线体验](https://liuduanchn.github.io/saixun-web-prototype/) · [GitHub 仓库](https://github.com/liuduanchn/saixun-web-prototype)
+
 </div>
 
 ![赛训智舱竞赛项目驾驶舱](docs/readme-assets/dashboard.png)
@@ -140,7 +142,9 @@ saixun-web-prototype/
 
 ## GitHub Pages 部署说明
 
-本次仅创建并推送公开仓库，尚未启用 GitHub Pages。若后续使用项目仓库 Pages 部署，需要先在 `vite.config.mjs` 中将 `base` 设置为 `/saixun-web-prototype/`，再通过 GitHub Actions 构建并发布 `dist/client` 目录。仓库改为自定义域名或根域名部署时，应同步调整 `base`。
+项目已配置 GitHub Pages，可通过 [在线演示地址](https://liuduanchn.github.io/saixun-web-prototype/) 访问。每次向 `main` 分支推送代码时，GitHub Actions 会自动运行测试、构建项目并发布 `dist/client` 目录。
+
+当前 Vite `base` 为 `/saixun-web-prototype/`，与项目仓库型 Pages 地址匹配。仓库改为自定义域名或根域名部署时，应同步将 `base` 调整为 `/`。
 
 ## 当前范围
 
