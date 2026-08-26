@@ -1,0 +1,221 @@
+// 赛训智舱 数据库模型 (Prisma + PostgreSQL)
+// P0.2：完整建模业务、评分、作品、诊断、答辩、资源、学习、通知等实体。
+// 多租户以 Tenant 为隔离根；所有业务表均带 tenantId 或经 Project 间接归属。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  TEACHER
+  STUDENT
+}
+
+enum Stage {
+  UNDERSTAND // 赛项理解
+  DESIGN     // 方案设计
+  PROTOTYPE  // 原型开发
+  POLISH     // 作品打磨
+  DEFENSE    // 模拟答辩
+  REVIEW     // 赛后复盘
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  NEEDS_FIX
+  DONE
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum DiagnosisStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum ResourceType {
+  TEMPLATE
+  CASE
+  QUESTION_BANK
+  MATERIAL
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  users     User[]
+  projects  Project[]
+
+  @@index([name])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  username     String
+  passwordHash String
+  name         String
+  role         Role     @default(STUDENT)
+  createdAt    DateTime @default(now())
+
+  ownedTasks       Task[]          @relation("TaskOwner")
+  uploads          WorkVersion[]
+  notifications    Notification[]
+  learningEvents   LearningEvent[]
+
+  @@unique([tenantId, username])
+  @@index([tenantId])
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  name         String
+  competition  String
+  currentStage Stage    @default(UNDERSTAND)
+  createdAt    DateTime @default(now())
+
+  criteria         Criterion[]
+  tasks            Task[]
+  works            WorkVersion[]
+  defenseSessions  DefenseSession[]
+  resources        Resource[]
+
+  @@index([tenantId])
+}
+
+model Criterion {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+  name      String
+  weight    Float
+  scorePoints ScorePoint[]
+
+  @@index([projectId])
+}
+
+model ScorePoint {
+  id          String   @id @default(cuid())
+  criterionId String
+  criterion   Criterion @relation(fields: [criterionId], references: [id])
+  name        String
+  abilityTags String[] @default([])
+
+  tasks     Task[]      @relation("TaskScorePoints")
+  diagnoses Diagnosis[]
+
+  @@index([criterionId])
+}
+
+model Task {
+  id        String     @id @default(cuid())
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id])
+  title     String
+  ownerId   String?
+  owner     User?      @relation("TaskOwner", fields: [ownerId], references: [id])
+  dueDate   DateTime?
+  status    TaskStatus @default(TODO)
+  done      Boolean    @default(false)
+  scorePoints ScorePoint[] @relation("TaskScorePoints")
+  createdAt DateTime   @default(now())
+
+  @@index([projectId])
+}
+
+model WorkVersion {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  uploaderId String
+  uploader   User     @relation(fields: [uploaderId], references: [id])
+  fileRef    String
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  diagnoses Diagnosis[]
+
+  @@index([projectId])
+}
+
+model Diagnosis {
+  id            String         @id @default(cuid())
+  workVersionId String
+  workVersion   WorkVersion    @relation(fields: [workVersionId], references: [id])
+  scorePointId  String
+  scorePoint    ScorePoint     @relation(fields: [scorePointId], references: [id])
+  matchScore    Float
+  severity      Severity
+  issues        String
+  suggestions   String
+  status        DiagnosisStatus @default(PENDING)
+  createdAt     DateTime       @default(now())
+
+  @@index([workVersionId])
+}
+
+model DefenseSession {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  round      Int      @default(1)
+  transcript Json
+  evaluations Json
+  createdAt  DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model Resource {
+  id        String       @id @default(cuid())
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id])
+  type      ResourceType @default(MATERIAL)
+  name      String
+  fileRef   String?
+  createdAt DateTime     @default(now())
+
+  @@index([projectId])
+}
+
+model LearningEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  category  String
+  title     String
+  detail    String?
+  targetNav String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
