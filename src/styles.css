@@ -154,3 +154,26 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
   .module-page { padding: 14px 12px 28px; }.page-intro { grid-template-columns: auto 1fr; padding-bottom: 12px; }.page-intro > .page-primary,.page-intro > .status-tag { grid-column: 1 / -1; width: 100%; }.page-intro p { line-height: 1.5; }.process-strip { overflow-x: auto; grid-template-columns: repeat(3,270px); }.analysis-layout,.board-layout,.diagnosis-grid,.defense-layout,.review-grid,.learning-layout,.settings-layout { grid-template-columns: 1fr; }.criteria-panel { overflow-x: auto; }.criterion-row { min-width: 560px; }.kanban-board { grid-template-columns: repeat(5,210px); }.stage-compact { overflow-x: auto; grid-template-columns: repeat(6,100px); }.review-metrics { overflow-x: auto; grid-template-columns: repeat(4,180px); }.case-library { grid-template-columns: 1fr; }.case-library h2 { grid-column: 1; }.teacher-comment { grid-template-columns: 1fr; }.teacher-comment .page-primary { width: 100%; }.resource-head { display: none; }.resource-table > button { grid-template-columns: 1fr auto 20px; padding: 10px 0; }.resource-table > button > span:nth-child(3),.resource-table > button > span:nth-child(4) { display: none; }.search-field { width: 100%; }.account-card { grid-template-columns: 58px 1fr; }.account-card .status-tag { grid-column: 1 / -1; }
   .notification-panel { right: -52px; }
 }
+
+/* 训练任务中心：真实数据驱动的看板卡片 */
+.kanban-card { position: relative; }
+.kanban-card-main { all: unset; flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.kanban-card-main strong { font-size: 14px; line-height: 1.35; }
+.kanban-card-main p { margin: 0; font-size: 12px; color: #64748b; }
+.kanban-card-main small { font-size: 11px; color: #94a3b8; display: inline-flex; align-items: center; gap: 4px; }
+.kanban-del { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: #94a3b8; border-radius: 6px; cursor: pointer; }
+.kanban-del:hover { background: rgba(15,23,42,.06); color: #ef4444; }
+
+/* 作品诊断中心：真实诊断结果列表 */
+.upload-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.diagnosis-meta { font-size: 13px; color: #64748b; margin: 4px 0 12px; }
+.diagnosis-list { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.diagnosis-item { border: 1px solid rgba(15,23,42,.08); border-radius: 12px; padding: 14px 16px; background: #fff; }
+.diagnosis-item-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.diagnosis-item-head strong { font-size: 15px; }
+.diagnosis-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.diagnosis-actions button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(15,23,42,.15); background: #f8fafc; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.diagnosis-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.diagnosis-actions .review-state { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
+.diagnosis-actions .review-state.confirmed { background: #dcfce7; color: #15803d; }
+.diagnosis-actions .review-state.rejected { background: #fee2e2; color: #b91c1c; }

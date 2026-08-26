@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, BookOpenText, Brain, CalendarBlank, ChartBar, Check, CheckCircle,
   ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
-  Sparkle, Student, Target, TrendUp, UserCircle, UsersThree, WarningCircle,
+  Sparkle, Student, Target, TrendUp, UserCircle, UsersThree, WarningCircle, X,
 } from "@phosphor-icons/react";
+import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
+import { normalizeTask, buildColumns } from "./taskModel.js";
 
 const criteria = [
   { name: "功能完整性", weight: "25%", points: ["需求理解与功能覆盖", "核心功能实现规范性", "功能稳定性与鲁棒性"], tone: "blue" },
@@ -22,6 +24,16 @@ const board = [
   { title: "需修改", tone: "orange", items: ["应用成效分析"] },
   { title: "已完成", tone: "green", items: ["完成模拟答辩", "完善作品文档"] },
 ];
+
+// 看板列标题 -> 后端任务状态
+const COLUMN_STATUS = {
+  待开始: "TODO",
+  进行中: "IN_PROGRESS",
+  待审核: "IN_REVIEW",
+  需修改: "NEEDS_FIX",
+  已完成: "DONE",
+};
+const statusKeyOf = (label) => COLUMN_STATUS[label] || "TODO";
 
 function PageIntro({ icon: Icon, title, description, action }) {
   return <header className="page-intro"><span className="page-icon"><Icon size={25} weight="duotone" /></span><div><h1>{title}</h1><p>{description}</p></div>{action}</header>;
@@ -44,17 +56,219 @@ function AnalysisPage({ onNavigate, onToast }) {
 }
 
 function TrainingPage({ onToast }) {
+  const [tasks, setTasks] = useState(DEMO_MODE ? null : []);
+  const [coverage, setCoverage] = useState(null);
+  const [loading, setLoading] = useState(!DEMO_MODE);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (DEMO_MODE) return undefined;
+    let active = true;
+    const load = async () => {
+      try {
+        const [list, cov] = await Promise.all([
+          api.tasks.list(PROJECT_ID),
+          api.tasks.coverage(PROJECT_ID),
+        ]);
+        if (!active) return;
+        setTasks(list.map(normalizeTask));
+        setCoverage(cov);
+      } catch (err) {
+        if (active) setError(err?.message || "任务数据加载失败");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const createTask = async (status) => {
+    const title = window.prompt("请输入任务标题");
+    if (!title || !title.trim()) return;
+    if (DEMO_MODE) {
+      onToast("演示模式：新建任务仅本地展示，不会写入后端");
+      return;
+    }
+    try {
+      const created = await api.tasks.create({ projectId: PROJECT_ID, title: title.trim(), status });
+      setTasks((cur) => [normalizeTask(created), ...cur]);
+      onToast("任务已创建");
+    } catch (err) {
+      onToast(err?.message || "创建失败");
+    }
+  };
+
+  const toggleDone = async (item) => {
+    const next = item.status === "DONE" ? "TODO" : "DONE";
+    if (DEMO_MODE) {
+      setTasks((cur) => cur.map((t) => (t.id === item.id ? { ...t, status: next, done: next === "DONE" } : t)));
+      return;
+    }
+    try {
+      const updated = await api.tasks.update(item.id, { status: next });
+      setTasks((cur) => cur.map((t) => (t.id === item.id ? normalizeTask(updated) : t)));
+    } catch (err) {
+      onToast(err?.message || "更新失败");
+    }
+  };
+
+  const removeTask = async (item) => {
+    if (DEMO_MODE) {
+      setTasks((cur) => cur.filter((t) => t.id !== item.id));
+      return;
+    }
+    try {
+      await api.tasks.remove(item.id);
+      setTasks((cur) => cur.filter((t) => t.id !== item.id));
+      onToast("任务已删除");
+    } catch (err) {
+      onToast(err?.message || "删除失败");
+    }
+  };
+
+  const columns = (() => {
+    if (DEMO_MODE || !tasks) {
+      return board.map((col) => ({
+        ...col,
+        items: col.items.map((title, i) => ({
+          id: `${col.title}-${i}`,
+          title,
+          scorePointCount: i % 2 ? 3 : 5,
+          due: col.tone === "green" ? "已完成" : "截止 08-28 18:00",
+          status: col.tone === "green" ? "DONE" : col.tone === "orange" ? "NEEDS_FIX" : "IN_PROGRESS",
+          done: col.tone === "green",
+        })),
+      }));
+    }
+    return buildColumns(tasks).map((col) => ({
+      ...col,
+      items: col.items.map((t) => ({
+        id: t.id,
+        title: t.title,
+        scorePointCount: t.scorePoints.length,
+        due: t.due,
+        status: t.status,
+        done: t.done,
+      })),
+    }));
+  })();
+
+  const covCovered = coverage ? coverage.coveredScorePoints : 18;
+  const covTotal = coverage ? coverage.totalScorePoints : 25;
+  const covRate = coverage ? coverage.coverageRate : 72;
+
   return <section className="module-page">
-    <PageIntro icon={ClipboardText} title="训练任务中心" description="将能力要求转化为阶段任务，持续跟踪进度、审核状态与评分覆盖。" action={<button className="page-primary" onClick={() => onToast("已创建空白训练任务")}><Plus size={19} />新建任务</button>} />
+    <PageIntro icon={ClipboardText} title="训练任务中心" description="将能力要求转化为阶段任务，持续跟踪进度、审核状态与评分覆盖。" action={<button className="page-primary" onClick={() => createTask("TODO")}><Plus size={19} />新建任务</button>} />
     <div className="stage-compact">{['赛项理解','方案设计','原型开发','作品打磨','模拟答辩','赛后复盘'].map((item,index) => <span key={item} className={index === 3 ? 'active' : ''}><i>{index + 1}</i>{item}</span>)}</div>
-    <div className="board-layout"><div className="kanban-board">{board.map((column) => <section className={`kanban-column ${column.tone}`} key={column.title}><header><h2>{column.title}</h2><span>{column.items.length}</span></header>{column.items.map((item,index) => <button className="kanban-card" key={item} onClick={() => onToast(`已打开任务：${item}`)}><strong>{item}</strong><p>{index % 2 ? '关联 3 个评分点' : '关联 5 个评分点'}</p><small><Clock size={14} />{column.tone === 'green' ? '已完成并审核' : '截止 08-28 18:00'}</small></button>)}<button className="add-task" onClick={() => onToast(`在“${column.title}”中新建任务`)}><Plus size={16} />新建任务</button></section>)}</div><aside className="board-summary"><section className="module-panel"><h2>评分点覆盖</h2><div className="coverage-big"><strong>18</strong><span>/25</span></div><div className="progress-line"><i style={{width:'72%'}} /></div><p><span>已覆盖 18</span><span>未覆盖 7</span></p></section><section className="module-panel warning-box"><h2><WarningCircle size={21} />风险预警</h2><strong>展示材料缺少应用成效证据</strong><p>可能影响“应用成效”评分点得分。</p><button onClick={() => onToast("已定位到应用成效修改任务")}>去处理<ArrowRight size={15} /></button></section></aside></div>
+    {error && <p className="empty-state">{error}</p>}
+    {loading && <p className="empty-state">任务加载中…</p>}
+    <div className="board-layout"><div className="kanban-board">{columns.map((column) => <section className={`kanban-column ${column.tone}`} key={column.label}><header><h2>{column.label}</h2><span>{column.items.length}</span></header>{column.items.map((item) => <article className={`kanban-card ${item.done ? "done" : ""}`} key={item.id}>
+      <button className="kanban-card-main" onClick={() => toggleDone(item)}><strong>{item.title}</strong><p>关联 {item.scorePointCount} 个评分点</p><small><Clock size={14} />{item.due}</small></button>
+      <button className="kanban-del" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); removeTask(item); }}><X size={15} /></button>
+    </article>)}<button className="add-task" onClick={() => createTask(statusKeyOf(column.label))}><Plus size={16} />新建任务</button></section>)}</div><aside className="board-summary"><section className="module-panel"><h2>评分点覆盖</h2><div className="coverage-big"><strong>{covCovered}</strong><span>/{covTotal}</span></div><div className="progress-line"><i style={{ width: `${covRate}%` }} /></div><p><span>已覆盖 {covCovered}</span><span>未覆盖 {covTotal - covCovered}</span></p></section><section className="module-panel warning-box"><h2><WarningCircle size={21} />风险预警</h2><strong>展示材料缺少应用成效证据</strong><p>可能影响“应用成效”评分点得分。</p><button onClick={() => onToast("已定位到应用成效修改任务")}>去处理<ArrowRight size={15} /></button></section></aside></div>
   </section>;
 }
 
+const severityTone = (s) => ({ LOW: "green", MEDIUM: "blue", HIGH: "orange", CRITICAL: "red" }[s] || "blue");
+const severityLabel = (s) => ({ LOW: "低", MEDIUM: "中", HIGH: "高", CRITICAL: "严重" }[s] || s);
+function normalizeDiagnosis(d) {
+  return {
+    id: d.id,
+    name: d.scorePoint?.name ?? "评分点",
+    criterion: d.scorePoint?.criterion?.name ?? "",
+    matchScore: d.matchScore,
+    severity: d.severity,
+    issues: d.issues,
+    suggestions: d.suggestions,
+    status: d.status,
+  };
+}
+
 function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
+  const [version, setVersion] = useState(null);
+  const [findings, setFindings] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (DEMO_MODE) {
+    return <section className="module-page">
+      <PageIntro icon={MonitorPlay} title="作品诊断中心" description="对照评分标准核验作品证据，由智能体提出问题、影响和修改建议。" action={<button className="page-primary" onClick={onOpenDiagnosis}><MagnifyingGlass size={19} />查看证据缺口</button>} />
+      <div className="diagnosis-grid"><section className="diagnosis-source"><article className="module-panel"><h2><FileDoc size={22} />评分标准原文</h2><p><strong>应用成效（20%）</strong></p><p>参赛作品应提供可量化的应用成效，<mark>包含测试样本、统计口径、前后对比和实际应用价值</mark>，并能验证实际改进。</p></article><article className="module-panel"><h2><ClipboardText size={22} />作品材料原文</h2><p><strong>应用成效</strong></p><p>本作品在实际场景中应用后，<mark>系统效率有所提升</mark>，用户体验得到改善，取得了良好的效果。</p></article></section><section className="module-panel diagnosis-result"><h2><Brain size={24} />智能诊断</h2><div className="match-score"><span><strong>92%</strong><small>证据匹配度</small></span><StatusTag tone="red">严重</StatusTag></div><dl><div><dt>主要问题</dt><dd>缺少可核验的应用成效数据</dd></div><div><dt>影响评分</dt><dd>应用成效</dd></div><div><dt>修改建议</dt><dd>补充测试样本、统计口径和前后对比</dd></div></dl></section><aside className="module-panel teacher-review"><h2><SealCheck size={24} />教师复核</h2><div className="review-confirm"><Check size={56} weight="bold" /><strong>待确认</strong></div><div className="review-actions"><button onClick={() => onToast("诊断建议已确认")}><CheckCircle size={19} />确认</button><button onClick={() => onToast("已退回智能体重新诊断")}><WarningCircle size={19} />驳回</button></div><button className="page-primary" onClick={() => onNavigate("训练任务中心")}><ClipboardText size={19} />转为修改任务</button></aside></div>
+    </section>;
+  }
+
+  const onFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      const wv = await api.works.upload(PROJECT_ID, file);
+      setVersion({ id: wv.id, version: wv.version });
+      const list = await api.diagnosis.analyze(wv.id);
+      setFindings(list.map(normalizeDiagnosis));
+      onToast("作品已上传并完成智能诊断");
+    } catch (err) {
+      setError(err?.message || "上传或诊断失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const review = async (diag, status) => {
+    if (!version) return;
+    setBusy(true);
+    try {
+      const res = await api.diagnosis.review(diag.id, status);
+      const list = await api.diagnosis.list(version.id);
+      setFindings(list.map(normalizeDiagnosis));
+      if (res.createdTask) onToast(`已生成修改任务：${res.createdTask.title}`);
+      else onToast(status === "CONFIRMED" ? "诊断项已确认" : "诊断项已驳回");
+    } catch (err) {
+      setError(err?.message || "复核失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const criterionCount = findings.length ? new Set(findings.map((f) => f.criterion)).size : 0;
+
   return <section className="module-page">
-    <PageIntro icon={MonitorPlay} title="作品诊断中心" description="对照评分标准核验作品证据，由智能体提出问题、影响和修改建议。" action={<button className="page-primary" onClick={onOpenDiagnosis}><MagnifyingGlass size={19} />查看证据缺口</button>} />
-    <div className="diagnosis-grid"><section className="diagnosis-source"><article className="module-panel"><h2><FileDoc size={22} />评分标准原文</h2><p><strong>应用成效（20%）</strong></p><p>参赛作品应提供可量化的应用成效，<mark>包含测试样本、统计口径、前后对比和实际应用价值</mark>，并能验证实际改进。</p></article><article className="module-panel"><h2><ClipboardText size={22} />作品材料原文</h2><p><strong>应用成效</strong></p><p>本作品在实际场景中应用后，<mark>系统效率有所提升</mark>，用户体验得到改善，取得了良好的效果。</p></article></section><section className="module-panel diagnosis-result"><h2><Brain size={24} />智能诊断</h2><div className="match-score"><span><strong>92%</strong><small>证据匹配度</small></span><StatusTag tone="red">严重</StatusTag></div><dl><div><dt>主要问题</dt><dd>缺少可核验的应用成效数据</dd></div><div><dt>影响评分</dt><dd>应用成效</dd></div><div><dt>修改建议</dt><dd>补充测试样本、统计口径和前后对比</dd></div></dl></section><aside className="module-panel teacher-review"><h2><SealCheck size={24} />教师复核</h2><div className="review-confirm"><Check size={56} weight="bold" /><strong>待确认</strong></div><div className="review-actions"><button onClick={() => onToast("诊断建议已确认")}><CheckCircle size={19} />确认</button><button onClick={() => onToast("已退回智能体重新诊断")}><WarningCircle size={19} />驳回</button></div><button className="page-primary" onClick={() => onNavigate("训练任务中心")}><ClipboardText size={19} />转为修改任务</button></aside></div>
+    <PageIntro icon={MonitorPlay} title="作品诊断中心" description="上传作品并由智能体对照评分标准逐项诊断，输出匹配度、问题与修改建议。" action={<label className="page-primary upload-label"><CloudArrowUp size={19} />{busy ? "处理中…" : "上传作品"}<input type="file" hidden onChange={onFile} disabled={busy} /></label>} />
+    {error && <p className="empty-state">{error}</p>}
+    {!version && <p className="empty-state">尚未上传作品。点击右上角“上传作品”开始诊断（文本类材料如 .txt/.md 可被解析并对照评分点）。</p>}
+    {version && <div className="diagnosis-meta">当前作品：第 {version.version} 版 · 共 {findings.length} 条诊断 · 覆盖 {criterionCount} 个评分要素</div>}
+    <div className="diagnosis-grid">
+      <section className="diagnosis-source">
+        <article className="module-panel"><h2><FileDoc size={22} />评分标准</h2><p>诊断依据为赛项已配置的评分点（共 {criterionCount} 个评分要素）。</p></article>
+        {version && <article className="module-panel"><h2><ClipboardText size={22} />当前作品</h2><p>第 {version.version} 版作品已上传，正在对照评分标准进行智能诊断。</p></article>}
+      </section>
+      <section className="module-panel diagnosis-result"><h2><Brain size={24} />智能诊断结果</h2>
+        {findings.length === 0 && <p className="empty-state">暂无诊断结果。</p>}
+        <div className="diagnosis-list">
+          {findings.map((f) => <article className="diagnosis-item" key={f.id}>
+            <div className="diagnosis-item-head"><strong>{f.name}</strong><StatusTag tone={severityTone(f.severity)}>{severityLabel(f.severity)}</StatusTag></div>
+            <div className="match-score"><span><strong>{f.matchScore}%</strong><small>证据匹配度</small></span></div>
+            <dl><div><dt>主要问题</dt><dd>{f.issues}</dd></div><div><dt>修改建议</dt><dd>{f.suggestions}</dd></div></dl>
+            <div className="diagnosis-actions">
+              <button onClick={() => review(f, "CONFIRMED")} disabled={busy || f.status === "CONFIRMED"}><CheckCircle size={18} />确认</button>
+              <button onClick={() => review(f, "REJECTED")} disabled={busy || f.status === "REJECTED"}><WarningCircle size={18} />驳回</button>
+              {f.status === "CONFIRMED" && <span className="review-state confirmed">已确认</span>}
+              {f.status === "REJECTED" && <span className="review-state rejected">已驳回</span>}
+            </div>
+          </article>)}
+        </div>
+      </section>
+      <aside className="module-panel teacher-review"><h2><SealCheck size={24} />教师复核</h2>
+        <div className="review-confirm"><Check size={56} weight="bold" /><strong>逐条确认</strong></div>
+        <p>确认高严重度（高 / 严重）缺口将自动生成对应修改任务，并同步到训练任务中心。</p>
+        <button className="page-primary" onClick={() => onNavigate("训练任务中心")}><ClipboardText size={19} />查看训练任务</button>
+      </aside>
+    </div>
   </section>;
 }
 

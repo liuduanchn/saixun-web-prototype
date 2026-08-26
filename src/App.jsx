@@ -12,6 +12,8 @@ import {
 import { LoginScreen } from "./LoginScreen.jsx";
 import { WorkspacePage } from "./pages.jsx";
 import { getSidebarPresentation } from "./sidebarState.js";
+import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
+import { normalizeTask } from "./taskModel.js";
 
 const stages = [
   { id: 1, label: "赛项理解", state: "done" }, { id: 2, label: "方案设计", state: "done" },
@@ -55,7 +57,8 @@ export function App() {
   const notificationAreaRef = useRef(null);
   const [user, setUser] = useState(() => loadSession(window.localStorage));
   const [activeNav, setActiveNav] = useState("竞赛项目驾驶舱");
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState(DEMO_MODE ? initialTasks : []);
+  const [coverage, setCoverage] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -89,18 +92,57 @@ export function App() {
     return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
   }, [notificationOpen]);
 
+  // 登录后拉取真实任务与评分覆盖率（演示模式保留内置示例数据）
+  useEffect(() => {
+    if (DEMO_MODE || !user) return undefined;
+    let active = true;
+    (async () => {
+      try {
+        const [taskList, cov] = await Promise.all([
+          api.tasks.list(PROJECT_ID),
+          api.tasks.coverage(PROJECT_ID),
+        ]);
+        if (!active) return;
+        setTasks(taskList.map(normalizeTask));
+        setCoverage(cov);
+      } catch (err) {
+        if (active) showToast(err?.message || "任务数据加载失败");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const showToast = (message) => {
     setToast(message);
     window.clearTimeout(window.__saixunToastTimer);
     window.__saixunToastTimer = window.setTimeout(() => setToast(""), 2600);
   };
 
-  const createRevisionTask = () => {
-    if (!created) {
+  const createRevisionTask = async () => {
+    if (created) {
+      showToast("该修改任务已存在，可在任务中心继续编辑");
+      return;
+    }
+    if (DEMO_MODE) {
       setTasks((current) => [{ id: Date.now(), title: "补齐应用成效证据链并提交教师复核", priority: "高优先级", owner: "待分配", due: "8-29 截止", done: false, fresh: true }, ...current]);
       setCreated(true);
       showToast("修改任务已生成，并同步到训练任务中心");
-    } else showToast("该修改任务已存在，可在任务中心继续编辑");
+      return;
+    }
+    try {
+      const created2 = await api.tasks.create({
+        projectId: PROJECT_ID,
+        title: "补齐应用成效证据链并提交教师复核",
+        status: "NEEDS_FIX",
+      });
+      setTasks((current) => [normalizeTask(created2), ...current]);
+      setCreated(true);
+      showToast("修改任务已生成，并同步到训练任务中心");
+    } catch (err) {
+      showToast(err?.message || "创建修改任务失败");
+    }
   };
 
   const toggleTask = (id) => setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task));
@@ -215,9 +257,9 @@ export function App() {
             <aside className="context-rail">
               <section className="coverage-panel">
                 <div className="section-heading"><h2>评分覆盖与进度</h2></div>
-                <div className="coverage-visual"><img src="/assets/progress-green.png" alt="" /><strong>18<span>/25</span></strong></div>
-                <p>评分点覆盖率 <strong>72%</strong></p>
-                <div className="legend"><span><i className="covered" />已覆盖评分点</span><strong>18</strong></div><div className="legend"><span><i />未覆盖评分点</span><strong>7</strong></div>
+                <div className="coverage-visual"><img src="/assets/progress-green.png" alt="" /><strong>{coverage ? coverage.coveredScorePoints : 18}<span>/{coverage ? coverage.totalScorePoints : 25}</span></strong></div>
+                <p>评分点覆盖率 <strong>{coverage ? coverage.coverageRate : 72}%</strong></p>
+                <div className="legend"><span><i className="covered" />已覆盖评分点</span><strong>{coverage ? coverage.coveredScorePoints : 18}</strong></div><div className="legend"><span><i />未覆盖评分点</span><strong>{coverage ? Math.max(0, coverage.totalScorePoints - coverage.coveredScorePoints) : 7}</strong></div>
                 <button className="secondary-button" onClick={() => setDrawerOpen(true)}>查看详情</button>
               </section>
               <section className="review-panel" id="pending-review">
