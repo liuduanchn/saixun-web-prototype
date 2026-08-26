@@ -68,6 +68,9 @@ export class DiagnosisService {
       findings = this.heuristic(points, content);
     }
 
+    // 重新诊断前清理该作品版本的旧记录，避免重复累积
+    await this.prisma.diagnosis.deleteMany({ where: { workVersionId } });
+
     const created: unknown[] = [];
     for (const f of findings) {
       const sp = points.find((p) => p.name === f.scorePointName);
@@ -82,6 +85,7 @@ export class DiagnosisService {
             issues: f.issues,
             suggestions: f.suggestions,
           },
+          include: { scorePoint: { include: { criterion: true } } },
         }),
       );
     }

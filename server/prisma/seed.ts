@@ -93,7 +93,7 @@ async function main() {
   }
 
   // eslint-disable-next-line no-console
-  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / AI应用开发赛 + 25 评分点 + 演示任务');
+  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / AI应用开发赛 + 15 评分点 + 演示任务');
 }
 
 main()
