@@ -177,3 +177,23 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
 .diagnosis-actions .review-state { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
 .diagnosis-actions .review-state.confirmed { background: #dcfce7; color: #15803d; }
 .diagnosis-actions .review-state.rejected { background: #fee2e2; color: #b91c1c; }
+
+/* —— P2 赛项解析中心 —— */
+.parse-panel textarea { width: 100%; min-height: 130px; border: 1px solid rgba(15,23,42,.12); border-radius: 10px; padding: 12px 14px; font-size: 14px; font-family: inherit; resize: vertical; box-sizing: border-box; }
+.parse-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.draft-box { margin-top: 16px; border: 1px dashed rgba(37,99,235,.4); border-radius: 12px; padding: 14px 16px; background: rgba(37,99,235,.04); }
+.draft-box h3 { font-size: 14px; margin: 0 0 10px; color: #1d4ed8; }
+.confirm-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid rgba(15,23,42,.06); font-size: 14px; }
+.confirm-row button { margin-left: auto; border: none; background: transparent; color: #94a3b8; cursor: pointer; padding: 2px 4px; }
+.confirm-row button:hover { color: #ef4444; }
+
+/* —— P2 模拟答辩室 —— */
+.defense-start { display: flex; flex-direction: column; gap: 18px; margin-top: 18px; }
+.session-history h3 { font-size: 15px; margin: 6px 0; }
+.session-history button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid rgba(15,23,42,.1); background: #fff; border-radius: 9px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; cursor: pointer; }
+.session-history button:hover { background: #f1f5f9; }
+.answer-eval { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 12px; color: #475569; }
+.answer-eval span { background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
+.answer-eval small { flex-basis: 100%; color: #64748b; margin-top: 2px; }
+.dialog-card.summary { background: rgba(22,163,74,.06); border-color: rgba(22,163,74,.25); }
+.eval-comment { font-size: 13px; color: #475569; margin: 8px 0 0; line-height: 1.5; }

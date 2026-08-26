@@ -153,4 +153,44 @@ export const api = {
       return `${API_BASE}/files/${encodeURIComponent(key)}`;
     },
   },
+  criteria: {
+    list(projectId) {
+      return request(`/criteria?projectId=${encodeURIComponent(projectId)}`);
+    },
+    parse(text) {
+      return request("/criteria/parse", { method: "POST", body: { text } });
+    },
+    confirm(projectId, draft) {
+      return request("/criteria/confirm", {
+        method: "POST",
+        body: { projectId, draft },
+      });
+    },
+    remove(id) {
+      return request(`/criteria/${id}`, { method: "DELETE" });
+    },
+    removeScorePoint(id) {
+      return request(`/criteria/score-points/${id}`, { method: "DELETE" });
+    },
+  },
+  defense: {
+    create(projectId, maxRounds = 3) {
+      return request("/defense/sessions", {
+        method: "POST",
+        body: { projectId, maxRounds },
+      });
+    },
+    answer(id, answer) {
+      return request(`/defense/sessions/${id}/answer`, {
+        method: "POST",
+        body: { answer },
+      });
+    },
+    list(projectId) {
+      return request(`/defense/sessions?projectId=${encodeURIComponent(projectId)}`);
+    },
+    get(id) {
+      return request(`/defense/sessions/${id}`);
+    },
+  },
 };

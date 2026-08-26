@@ -44,13 +44,88 @@ function StatusTag({ children, tone = "blue" }) {
 }
 
 function AnalysisPage({ onNavigate, onToast }) {
+  const [list, setList] = useState(DEMO_MODE ? criteria : []);
+  const [loading, setLoading] = useState(false);
+  const [text, setText] = useState("");
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (DEMO_MODE) { setList(criteria); return; }
+    let alive = true;
+    setLoading(true);
+    api.criteria.list(PROJECT_ID)
+      .then((data) => { if (alive) setList(data); })
+      .catch(() => { if (alive) onToast("评分标准加载失败"); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [onToast]);
+
+  const pointsOf = (c) => (DEMO_MODE ? c.points : c.scorePoints.map((sp) => sp.name));
+
+  const handleParse = async () => {
+    if (!text.trim()) { onToast("请先粘贴赛项规程或评分标准文本"); return; }
+    setBusy(true);
+    try {
+      const { draft } = await api.criteria.parse(text);
+      setDraft(draft);
+    } catch (e) {
+      onToast(e.message || "解析失败");
+    } finally { setBusy(false); }
+  };
+
+  const handleConfirm = async () => {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      await api.criteria.confirm(PROJECT_ID, draft);
+      const data = await api.criteria.list(PROJECT_ID);
+      setList(data);
+      setDraft(null); setText("");
+      onToast("评分要素已确认并加入训练路线");
+      if (onNavigate) onNavigate("训练任务中心");
+    } catch (e) { onToast(e.message || "确认失败"); }
+    finally { setBusy(false); }
+  };
+
+  const handleRemove = async (id) => {
+    try {
+      await api.criteria.remove(id);
+      setList((l) => l.filter((c) => c.id !== id));
+      onToast("已删除评分要素");
+    } catch (e) { onToast(e.message || "删除失败"); }
+  };
+
+  const totalPoints = list.reduce((sum, c) => sum + pointsOf(c).length, 0);
+
   return <section className="module-page">
-    <PageIntro icon={Cube} title="赛项解析中心" description="解析赛项规程与评分标准，建立评分点—能力要求—训练任务映射。" action={<button className="page-primary" onClick={() => onNavigate("训练任务中心")}><PaperPlaneTilt size={19} />生成训练路线</button>} />
-    <div className="process-strip">{[[FileDoc,"赛项规程","上传并解析赛项文档"],[ChartBar,"评分标准 → 能力点解析","提炼评分要点，映射能力要求"],[ShieldCheck,"教师确认","确认评分点，生成训练路线"]].map(([Icon,title,desc], index) => <div key={title}><span><Icon size={25} weight="duotone" /></span><p><strong>{title}</strong><small>{desc}</small></p>{index < 2 && <ArrowRight size={22} />}</div>)}</div>
+    <PageIntro icon={Cube} title="赛项解析中心" description="解析赛项规程与评分标准，由智能体抽取评分要素与能力要求，教师确认后生成训练路线。" action={!DEMO_MODE && <button className="page-primary" onClick={() => onNavigate("训练任务中心")}><PaperPlaneTilt size={19} />查看训练路线</button>} />
+    <div className="process-strip">{[[FileDoc,"赛项规程","粘贴规程/评分标准文本"],[ChartBar,"评分标准 → 能力点解析","智能体抽取评分要素与权重"],[ShieldCheck,"教师确认","确认后生成训练路线"]].map(([Icon,title,desc], index) => <div key={title}><span><Icon size={25} weight="duotone" /></span><p><strong>{title}</strong><small>{desc}</small></p>{index < 2 && <ArrowRight size={22} />}</div>)}</div>
+
+    {!DEMO_MODE && (
+      <section className="module-panel parse-panel">
+        <div className="panel-title"><h2>赛项规程解析（LLM）</h2>{busy && <StatusTag tone="blue">处理中…</StatusTag>}</div>
+        <textarea aria-label="赛项规程文本" value={text} onChange={(e) => setText(e.target.value)} placeholder="在此粘贴赛项规程、评分标准或能力要求文本，智能体将自动抽取结构化评分要素……" />
+        <div className="parse-actions">
+          <button className="page-primary" onClick={handleParse} disabled={busy}><Sparkle size={18} />AI 解析评分要素</button>
+          {draft && <button className="secondary-button" onClick={() => setDraft(null)} disabled={busy}>清除草稿</button>}
+        </div>
+        {draft && (
+          <div className="draft-box">
+            <h3>解析草稿（请核对后确认）</h3>
+            {draft.map((c, i) => <article className="criterion-row" key={i}><div className="criterion-weight blue"><strong>{c.name}</strong><span>{c.weight}%</span></div><ul>{c.scorePoints.map((sp, j) => <li key={j}>{sp.name}{sp.abilityTags?.length ? <em>（{sp.abilityTags.join("、")}）</em> : null}</li>)}</ul></article>)}
+            <div className="parse-actions">
+              <button className="page-primary" onClick={handleConfirm} disabled={busy}><SealCheck size={18} />确认并加入评分标准</button>
+              <button className="secondary-button" onClick={() => setDraft(null)} disabled={busy}>暂不确认</button>
+            </div>
+          </div>
+        )}
+      </section>
+    )}
+
     <div className="analysis-layout">
-      <section className="module-panel documents-panel"><div className="panel-title"><h2>上传的赛项文档</h2><StatusTag tone="green">4 份已解析</StatusTag></div>{[[FileDoc,"AI应用开发赛_赛项规程.docx","2.4 MB"],[FilePdf,"AI应用开发赛_评分标准.pdf","1.8 MB"],[FileXls,"AI应用开发赛_能力要求.xlsx","1.2 MB"],[PresentationChart,"AI应用开发赛_成果要求.pptx","3.6 MB"]].map(([Icon,name,size]) => <button className="document-row" key={name} onClick={() => onToast(`已打开：${name}`)}><Icon size={34} weight="duotone" /><span><strong>{name}</strong><small>{size} · 已解析</small></span><CheckCircle size={19} weight="fill" /></button>)}<button className="upload-drop" onClick={() => onToast("演示模式：已打开文件选择器")}><CloudArrowUp size={30} /><strong>点击上传赛项材料</strong><small>支持 Word / PDF / Excel / PPT</small></button></section>
-      <section className="module-panel criteria-panel"><div className="panel-title"><h2>评分要素与能力映射</h2><span>共 25 个关键评分点</span></div>{criteria.map((item) => <article className="criterion-row" key={item.name}><div className={`criterion-weight ${item.tone}`}><strong>{item.name}</strong><span>{item.weight}</span></div><ul>{item.points.map((point) => <li key={point}>{point}</li>)}</ul><div className="ability-tags"><span>需求分析</span><span>方案设计</span><span>证据表达</span></div></article>)}</section>
-      <aside className="module-panel confirm-panel"><div className="panel-title"><h2>评分要点确认</h2><StatusTag tone="green">已确认 25 / 25</StatusTag></div><div className="metric-trio"><span><strong>5</strong><small>评分要素</small></span><span><strong>25</strong><small>关键评分点</small></span><span><strong>18</strong><small>能力要求</small></span></div>{criteria.map((item) => <button key={item.name} onClick={() => onToast(`已查看 ${item.name} 评分点`)}><CheckCircle size={18} weight="fill" />{item.name}（{item.weight}）<ArrowRight size={15} /></button>)}</aside>
+      <section className="module-panel criteria-panel"><div className="panel-title"><h2>评分要素与能力映射</h2><span>{loading ? "加载中…" : `共 ${totalPoints} 个关键评分点`}</span></div>{list.length === 0 && !loading && <p className="empty-state">{DEMO_MODE ? "暂无评分要素" : "尚无评分要素，请在上方粘贴赛项规程进行解析"}</p>}{list.map((item) => <article className="criterion-row" key={item.id || item.name}><div className={`criterion-weight ${(item.tone) || "blue"}`}><strong>{item.name}</strong><span>{DEMO_MODE ? item.weight : `${item.weight}%`}</span></div><ul>{pointsOf(item).map((point) => <li key={point}>{point}</li>)}</ul></article>)}</section>
+      <aside className="module-panel confirm-panel"><div className="panel-title"><h2>评分要点确认</h2><StatusTag tone="green">{list.length} 要素</StatusTag></div><div className="metric-trio"><span><strong>{list.length}</strong><small>评分要素</small></span><span><strong>{totalPoints}</strong><small>关键评分点</small></span><span><strong>{DEMO_MODE ? "演示" : "已确认"}</strong><small>状态</small></span></div>{list.map((item) => <div className="confirm-row" key={item.id || item.name}><CheckCircle size={18} weight="fill" /><span>{item.name}（{DEMO_MODE ? item.weight : `${item.weight}%`}）</span>{!DEMO_MODE && <button aria-label="删除" onClick={() => handleRemove(item.id)}><X size={15} /></button>}</div>)}</aside>
     </div>
   </section>;
 }
@@ -274,10 +349,87 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
 
 function DefensePage({ onToast }) {
   const [comment, setComment] = useState("");
-  const submit = () => { onToast(comment.trim() ? "教师补充评价已提交" : "请先填写补充评价"); if (comment.trim()) setComment(""); };
+  const [session, setSession] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [answer, setAnswer] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const loadSessions = async () => {
+    try { setSessions(await api.defense.list(PROJECT_ID)); } catch { /* ignore */ }
+  };
+  useEffect(() => { if (!DEMO_MODE) loadSessions(); /* eslint-disable-next-line */ }, [onToast]);
+
+  const startSession = async () => {
+    setBusy(true);
+    try {
+      const s = await api.defense.create(PROJECT_ID, 3);
+      setSession(s);
+      setSessions((list) => [s, ...list.filter((x) => x.id !== s.id)]);
+    } catch (e) { onToast(e.message || "发起答辩失败"); }
+    finally { setBusy(false); }
+  };
+
+  const submitAnswer = async () => {
+    if (!session || !answer.trim()) { onToast("请先填写作答内容"); return; }
+    setBusy(true);
+    try {
+      const updated = await api.defense.answer(session.id, answer);
+      setSession(updated); setAnswer("");
+    } catch (e) { onToast(e.message || "提交失败"); }
+    finally { setBusy(false); }
+  };
+
+  const resume = async (id) => {
+    try { setSession(await api.defense.get(id)); } catch (e) { onToast(e.message || "加载失败"); }
+  };
+
+  const submitComment = () => { onToast(comment.trim() ? "教师补充评价已提交" : "请先填写补充评价"); if (comment.trim()) setComment(""); };
+
+  if (DEMO_MODE) {
+    return <section className="module-page">
+      <PageIntro icon={BookOpenText} title="模拟答辩室" description="围绕未闭环评分点自动追问，并将回答质量回写为训练建议。" action={<StatusTag tone="orange">第 2 轮追问 · 02:36</StatusTag>} />
+      <div className="defense-layout"><section className="defense-thread">{[["AI评委","你如何证明该系统在真实场景中有效？","10:35:12","ai"],["学生回答","系统试用后效果较好。","10:36:08","student"],["AI二次追问","请说明测试样本、统计口径和前后对比数据。","10:37:21","ai"]].map(([role,text,time,tone]) => <article className={`dialog-card ${tone}`} key={time}><span>{tone === 'ai' ? <Brain size={26} /> : <Student size={26} />}</span><div><strong>{role}</strong><p>{text}</p></div><small>{time}</small></article>)}</section><aside className="defense-side"><section className="module-panel"><h2>回答评价</h2>{[["正面回应","4 / 5","green"],["逻辑清晰","4 / 5","green"],["证据充分","2 / 5","orange"],["技术准确","4 / 5","green"]].map(([label,score,tone]) => <div className="evaluation-row" key={label}><StatusTag tone={tone}>{tone === 'green' ? '通过' : '不足'}</StatusTag><span>{label}</span><strong>{score}</strong></div>)}</section><section className="module-panel evidence-gap"><h2>证据不足</h2><strong>应用成效 · 应用效果与性能表现</strong><p>缺少测试样本说明、统计口径定义以及前后对比数据。</p></section></aside></div><section className="module-panel teacher-comment"><h2>教师补充评价</h2><textarea aria-label="教师补充评价" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="请输入对学生回答的补充评价，聚焦证据充分性、逻辑完整性与改进建议……" /><button className="page-primary" onClick={submitComment}>提交评价</button></section>
+    </section>;
+  }
+
+  const evaluations = session?.evaluations || { rounds: [] };
+  const done = !!evaluations.done;
+  const lastRound = evaluations.rounds?.[evaluations.rounds.length - 1];
+  const transcript = (session?.transcript || []);
+
   return <section className="module-page">
-    <PageIntro icon={BookOpenText} title="模拟答辩室" description="围绕未闭环评分点自动追问，并将回答质量回写为训练建议。" action={<StatusTag tone="orange">第 2 轮追问 · 02:36</StatusTag>} />
-    <div className="defense-layout"><section className="defense-thread">{[["AI评委","你如何证明该系统在真实场景中有效？","10:35:12","ai"],["学生回答","系统试用后效果较好。","10:36:08","student"],["AI二次追问","请说明测试样本、统计口径和前后对比数据。","10:37:21","ai"]].map(([role,text,time,tone]) => <article className={`dialog-card ${tone}`} key={time}><span>{tone === 'ai' ? <Brain size={26} /> : <Student size={26} />}</span><div><strong>{role}</strong><p>{text}</p></div><small>{time}</small></article>)}</section><aside className="defense-side"><section className="module-panel"><h2>回答评价</h2>{[["正面回应","4 / 5","green"],["逻辑清晰","4 / 5","green"],["证据充分","2 / 5","orange"],["技术准确","4 / 5","green"]].map(([label,score,tone]) => <div className="evaluation-row" key={label}><StatusTag tone={tone}>{tone === 'green' ? '通过' : '不足'}</StatusTag><span>{label}</span><strong>{score}</strong></div>)}</section><section className="module-panel evidence-gap"><h2>证据不足</h2><strong>应用成效 · 应用效果与性能表现</strong><p>缺少测试样本说明、统计口径定义以及前后对比数据。</p></section></aside></div><section className="module-panel teacher-comment"><h2>教师补充评价</h2><textarea aria-label="教师补充评价" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="请输入对学生回答的补充评价，聚焦证据充分性、逻辑完整性与改进建议……" /><button className="page-primary" onClick={submit}>提交评价</button></section>
+    <PageIntro icon={BookOpenText} title="模拟答辩室" description="基于评分要点与作品材料，由智能体评委多轮追问并实时评分，将回答质量回写为训练建议。" action={session ? <StatusTag tone={done ? "green" : "orange"}>{done ? "答辩已结束" : `第 ${session.round} / ${evaluations.maxRounds} 轮`}</StatusTag> : <StatusTag tone="blue">未开始</StatusTag>} />
+    {!session ? (
+      <div className="defense-start">
+        <button className="page-primary" onClick={startSession} disabled={busy}><Brain size={19} />{busy ? "发起中…" : "发起模拟答辩"}</button>
+        {sessions.length > 0 && <div className="session-history"><h3>历史答辩</h3>{sessions.map((s) => <button key={s.id} onClick={() => resume(s.id)}><MonitorPlay size={17} />{new Date(s.createdAt).toLocaleString("zh-CN")} · 共 {s.evaluations?.rounds?.length || 0} 轮{((s.evaluations?.done) ? " · 已结束" : "")}</button>)}</div>}
+      </div>
+    ) : (
+      <div className="defense-layout"><section className="defense-thread">
+        {transcript.map((entry, i) => <article className={`dialog-card ${entry.role === "judge" ? "ai" : "student"}`} key={i}><span>{entry.role === "judge" ? <Brain size={26} /> : <Student size={26} />}</span><div><strong>{entry.role === "judge" ? "AI 评委" : "学生回答"}</strong><p>{entry.content}</p>{entry.evaluation && <div className="answer-eval"><span>逻辑 {entry.evaluation.logic}</span><span>证据 {entry.evaluation.evidence}</span><span>技术 {entry.evaluation.accuracy}</span><small>{entry.evaluation.comment}</small></div>}</div></article>)}
+        {done && evaluations.overall && <article className="dialog-card summary"><span><SealCheck size={26} /></span><div><strong>总评</strong><p>{evaluations.overall}</p></div></article>}
+      </section><aside className="defense-side">
+        <section className="module-panel"><h2>本轮评价</h2>{lastRound ? <div className="evaluation-row"><StatusTag tone={lastRound.scores.evidence >= 60 ? "green" : "orange"}>{lastRound.scores.evidence >= 60 ? "通过" : "不足"}</StatusTag><span>证据充分</span><strong>{lastRound.scores.evidence}</strong></div> : <p className="empty-state">尚未作答</p>}{lastRound?.comment && <p className="eval-comment">{lastRound.comment}</p>}</section>
+        <section className="module-panel evidence-gap"><h2>评分进度</h2><strong>{evaluations.rounds?.length || 0} / {evaluations.maxRounds} 轮</strong><p>已完成评分轮次，结束后可查看总评与改进建议。</p></section>
+      </aside></div>
+    )}
+    {session && !done && (
+      <section className="module-panel teacher-comment">
+        <h2>学生作答</h2>
+        <textarea aria-label="学生作答" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="请输入对评委提问的回答……" />
+        <div className="parse-actions">
+          <button className="page-primary" onClick={submitAnswer} disabled={busy}>{busy ? "提交中…" : "提交作答"}</button>
+          <button className="secondary-button" onClick={() => setSession(null)}>返回列表</button>
+        </div>
+      </section>
+    )}
+    {session && (
+      <section className="module-panel teacher-comment">
+        <h2>教师补充评价</h2>
+        <textarea aria-label="教师补充评价" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="请输入对学生回答的补充评价……" />
+        <button className="page-primary" onClick={submitComment}>提交评价</button>
+      </section>
+    )}
   </section>;
 }
 

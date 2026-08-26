@@ -1,5 +1,12 @@
 import { Module } from '@nestjs/common';
+import { CriteriaService } from './criteria.service';
+import { CriteriaController } from './criteria.controller';
+import { AiModule } from '../ai/ai.module';
 
-// P0.1 模块骨架：后续阶段（P0.3 起）按领域实现 providers/controllers 并在此装配。
-@Module({})
+@Module({
+  imports: [AiModule],
+  providers: [CriteriaService],
+  controllers: [CriteriaController],
+  exports: [CriteriaService],
+})
 export class CriteriaModule {}
