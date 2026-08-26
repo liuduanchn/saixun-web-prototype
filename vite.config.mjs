@@ -2,7 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  base: "/saixun-web-prototype/",
+  // 部署基准路径：GitHub Pages 用 /saixun-web-prototype/；Vercel 等根域名部署设 VITE_BASE=/
+  base: process.env.VITE_BASE || "/saixun-web-prototype/",
   build: {
     outDir: "dist/client",
   },
