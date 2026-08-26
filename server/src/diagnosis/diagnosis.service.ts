@@ -12,6 +12,7 @@ import { JwtPayload } from '../auth/auth.service';
 import { Severity, DiagnosisStatus } from '@prisma/client';
 
 interface Finding {
+  index?: number;
   scorePointName: string;
   matchScore: number;
   severity: Severity;
@@ -73,7 +74,12 @@ export class DiagnosisService {
 
     const created: unknown[] = [];
     for (const f of findings) {
-      const sp = points.find((p) => p.name === f.scorePointName);
+      // 优先按模型返回的序号精确匹配；否则回退到名称（去除空白后）匹配
+      const norm = (s: string) => s.replace(/\s+/g, '');
+      const sp =
+        (f.index && points[f.index - 1]) ||
+        points.find((p) => norm(p.name) === norm(f.scorePointName)) ||
+        points.find((p) => p.name.includes(f.scorePointName) || f.scorePointName.includes(p.name));
       if (!sp) continue;
       created.push(
         await this.prisma.diagnosis.create({
@@ -98,16 +104,17 @@ export class DiagnosisService {
     content: string,
   ): Promise<Finding[]> {
     const pointList = points
-      .map((p) => `- 【${p.criterion.name}】${p.name}`)
+      .map((p, i) => `${i + 1}. 【${p.criterion.name}】${p.name}`)
       .join('\n');
     const messages: ChatMessage[] = [
       {
         role: 'system',
         content:
           '你是职业技能竞赛作品评审专家。请根据评分标准逐项评估学生作品，' +
-          '输出严格的 JSON 数组，每个元素包含：scorePointName(评分点名称，须与给定列表完全一致)、' +
+          '输出严格的 JSON 数组，每个元素包含：index(整数，须与下方评分标准列表中的序号一一对应，从1开始)、' +
+          'scorePointName(评分点名称，只写纯名称，不要包含序号或【】前缀)、' +
           'matchScore(0-100 整数，作品对该评分点的达成度)、severity(LOW/MEDIUM/HIGH/CRITICAL 之一)、' +
-          'issues(中文，指出不足，不超过120字)、suggestions(中文，改进建议，不超过120字)。不要输出多余文字。',
+          'issues(中文，指出不足，不超过120字)、suggestions(中文，改进建议，不超过120字)。不要输出多余文字，也不要用代码块包裹。',
       },
       {
         role: 'user',
@@ -116,9 +123,10 @@ export class DiagnosisService {
           `学生作品内容：\n${content || '（未提供可解析文本，请基于评分点给出通用性评估）'}`,
       },
     ];
-    const raw = await this.ai.chat(messages, { temperature: 0.2 });
+    const raw = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 4000 });
     const json = this.extractJsonArray(raw);
     return json.map((item: Record<string, unknown>) => ({
+      index: Number(item.index ?? 0),
       scorePointName: String(item.scorePointName ?? ''),
       matchScore: Number(item.matchScore ?? 60),
       severity: this.toSeverity(item.severity),
@@ -162,7 +170,16 @@ export class DiagnosisService {
         return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>[];
       }
     } catch {
-      /* ignore */
+      // 响应被截断（token 超限）时，尝试截到最后一个完整对象再补齐，避免整批丢失
+      const start = raw.indexOf('[');
+      const lastObj = raw.lastIndexOf('}');
+      if (start >= 0 && lastObj > start) {
+        try {
+          return JSON.parse(raw.slice(start, lastObj + 1) + ']') as Record<string, unknown>[];
+        } catch {
+          /* ignore */
+        }
+      }
     }
     return [];
   }
