@@ -41,6 +41,33 @@ npm run start:dev
 - `GET  /api/auth/me` → 当前用户（需 `Authorization: Bearer <token>`）
 - 全局 `JwtAuthGuard` 通过 `@Public()` 放行公开路由
 
+## 任务 API（P1）
+- `GET    /api/tasks?projectId=` → 看板任务列表
+- `POST   /api/tasks` `{projectId,title,status?,scorePointIds?}` → 新建任务
+- `PATCH  /api/tasks/:id` `{status?,title?,scorePointIds?}` → 改状态/关联评分点（看板拖拽）
+- `DELETE /api/tasks/:id` → 删除
+- `GET    /api/tasks/coverage?projectId=` → 评分覆盖率（实时计算）
+
+## 作品 + 诊断 API（P1 闭环）
+- `POST   /api/works?projectId=` `multipart/form-data` 字段 `file` → 上传作品，自动生成新版本
+- `GET    /api/works?projectId=` → 作品版本列表
+- `GET    /api/works/:id` → 单个作品（含下载 url）
+- `DELETE /api/works/:id` → 删除作品与文件
+- `POST   /api/diagnosis` `{workVersionId}` → 发起诊断（有 `AI_API_KEY` 走真实大模型，否则启发式兜底），逐项写入诊断记录
+- `GET    /api/diagnosis?workVersionId=` → 诊断结果列表（按匹配度升序）
+- `PATCH  /api/diagnosis/:id` `{status:CONFIRMED|REJECTED}` → 教师复核；确认且为 HIGH/CRITICAL 严重度时，**自动生成一条「修改：评分点」任务**到任务中心
+
+## 本地验证 P1 闭环（PowerShell）
+```powershell
+cd "E:\JHC\6项目科研相关\202607金职大首届教学智能体大赛\saixun-web-prototype\server"
+$token = (Invoke-RestMethod -Uri http://localhost:3001/api/auth/login -Method Post -ContentType "application/json" -Body '{"username":"teacher","password":"123456"}').access_token
+Set-Content -Path .\sample-work.txt -Value "本项目实现了核心功能，技术选型合理，架构先进，具备创新点。"
+$upload = curl.exe -s -X POST "http://localhost:3001/api/works?projectId=demo-project" -H "Authorization: Bearer $token" -F "file=@.\sample-work.txt"
+$wid = ($upload | ConvertFrom-Json).id
+Invoke-RestMethod -Uri http://localhost:3001/api/diagnosis -Method Post -ContentType "application/json" -Headers @{Authorization="Bearer $token"} -Body "{`"workVersionId`":`"$wid`"}" | ConvertTo-Json -Depth 4
+```
+
+
 
 ## 部署（Railway + Vercel）
 - 后端：Railway 挂载 Postgres + Qdrant，运行 `npm run build && npm run start:prod`

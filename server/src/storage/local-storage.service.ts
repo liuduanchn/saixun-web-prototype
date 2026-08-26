@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { mkdir, writeFile, unlink } from 'fs/promises';
+import { mkdir, writeFile, unlink, readFile } from 'fs/promises';
 import { join } from 'path';
 import { StorageProvider, UploadInput, StoredObject } from './storage.interface';
 
@@ -49,6 +49,16 @@ export class LocalStorageService implements StorageProvider {
       await unlink(join(this.root, key));
     } catch {
       // 文件不存在时忽略
+    }
+  }
+
+  async read(key: string): Promise<Buffer> {
+    // 仅允许读取本目录下的文件，杜绝路径穿越
+    const safe = key.replace(/[^a-zA-Z0-9._-]/g, '');
+    try {
+      return await readFile(join(this.root, safe));
+    } catch (e) {
+      throw new InternalServerErrorException('读取文件失败：' + (e as Error).message);
     }
   }
 }

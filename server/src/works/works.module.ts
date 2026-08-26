@@ -1,5 +1,11 @@
 import { Module } from '@nestjs/common';
+import { WorksService } from './works.service';
+import { WorksController } from './works.controller';
+import { StorageModule } from '../storage/storage.module';
 
-// P0.1 模块骨架：后续阶段（P0.3 起）按领域实现 providers/controllers 并在此装配。
-@Module({})
+@Module({
+  imports: [StorageModule],
+  controllers: [WorksController],
+  providers: [WorksService],
+})
 export class WorksModule {}

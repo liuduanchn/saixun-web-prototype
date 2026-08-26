@@ -1,5 +1,12 @@
 import { Module } from '@nestjs/common';
+import { DiagnosisService } from './diagnosis.service';
+import { DiagnosisController } from './diagnosis.controller';
+import { StorageModule } from '../storage/storage.module';
+import { AiModule } from '../ai/ai.module';
 
-// P0.1 模块骨架：后续阶段（P0.3 起）按领域实现 providers/controllers 并在此装配。
-@Module({})
+@Module({
+  imports: [StorageModule, AiModule],
+  controllers: [DiagnosisController],
+  providers: [DiagnosisService],
+})
 export class DiagnosisModule {}

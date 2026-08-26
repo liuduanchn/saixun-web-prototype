@@ -26,4 +26,6 @@ export interface StorageProvider {
   getUrl(key: string): string;
   /** 删除对象 */
   delete(key: string): Promise<void>;
+  /** 读取对象字节（诊断/解析模块需要分析文件内容） */
+  read(key: string): Promise<Buffer>;
 }
