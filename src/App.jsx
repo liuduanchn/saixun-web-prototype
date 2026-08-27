@@ -7,12 +7,12 @@ import {
 } from "@phosphor-icons/react";
 import {
   clearSession, getUnreadNotificationCount, loadSession, markAllNotificationsRead,
-  markNotificationRead, resolveNotificationTarget, resolvePage,
+  markNotificationRead, resolveNotificationTarget, resolvePage, saveSession,
 } from "./appState.js";
 import { LoginScreen } from "./LoginScreen.jsx";
 import { WorkspacePage } from "./pages.jsx";
 import { getSidebarPresentation } from "./sidebarState.js";
-import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
+import { api, DEMO_MODE, PROJECT_ID, setToken } from "./api.js";
 import { normalizeTask } from "./taskModel.js";
 
 const stages = [
@@ -82,16 +82,37 @@ export function App() {
   const [created, setCreated] = useState(false);
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState(PROJECT_ID);
+  const [teams, setTeams] = useState([]);
+  const [activeTenantId, setActiveTenantId] = useState(user?.tenantId || "");
   const taskSummary = useMemo(() => `${tasks.filter((task) => task.done).length}/${tasks.length}`, [tasks]);
   const unreadNotificationCount = useMemo(() => getUnreadNotificationCount(notifications), [notifications]);
   const sidebarPresentation = getSidebarPresentation(sidebarCollapsed);
+  const activeTeamName = teams.find((t) => t.tenantId === activeTenantId)?.name || user?.name || "智造先锋队";
 
-  // 登录后拉取可切换的赛项列表（演示模式不请求）
+  // 登录后拉取可切换的赛项列表（演示模式不请求）；切换团队后若当前项目不在列表则自动选首个
   useEffect(() => {
     if (DEMO_MODE || !user) return undefined;
     let active = true;
     api.projects.list().then((list) => {
-      if (active) setProjects(Array.isArray(list) ? list : []);
+      if (!active) return;
+      const arr = Array.isArray(list) ? list : [];
+      setProjects(arr);
+      setSelectedProjectId((current) => (arr.some((p) => p.id === current) ? current : (arr[0]?.id || "")));
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  // 登录后拉取可切换的团队列表（演示模式不请求）
+  useEffect(() => {
+    if (DEMO_MODE || !user) return undefined;
+    let active = true;
+    api.tenants.mine().then((list) => {
+      if (!active) return;
+      const arr = Array.isArray(list) ? list : [];
+      setTeams(arr);
+      setActiveTenantId(user.tenantId);
     }).catch(() => {});
     return () => {
       active = false;
@@ -210,9 +231,43 @@ export function App() {
     setActiveNav("竞赛项目驾驶舱");
     setUser(null);
   };
+  const switchTenant = async (tenantId, opts = {}) => {
+    if (DEMO_MODE) {
+      showToast("演示模式：未连接后端，无法切换团队");
+      return;
+    }
+    const { stay = false } = opts;
+    const target = teams.find((t) => t.tenantId === tenantId);
+    try {
+      const result = await api.tenants.switch(tenantId);
+      setToken(result.access_token);
+      saveSession(window.localStorage, result.user);
+      setUser(result.user);
+      setActiveTenantId(tenantId);
+      // 切换团队后重置项目选择（projects effect 会按新租户重新拉取）
+      setSelectedProjectId("");
+      if (!stay) {
+        // 顶栏下拉切换时回到驾驶舱；设置中心内切换则停留在当前页面
+        setActiveNav("竞赛项目驾驶舱");
+      }
+      showToast(`已切换到团队：${target?.name ?? "新团队"}`);
+    } catch (err) {
+      showToast(err?.message || "切换团队失败");
+    }
+  };
   const toggleSidebar = () => {
     setProfileOpen(false);
     setSidebarCollapsed((value) => !value);
+  };
+
+  // 团队改名后刷新顶栏团队列表（含当前活跃团队名）
+  const refreshTeams = () => {
+    if (DEMO_MODE || !user) return;
+    api.tenants.mine().then((list) => {
+      const arr = Array.isArray(list) ? list : [];
+      setTeams(arr);
+      setActiveTenantId(user.tenantId);
+    }).catch(() => {});
   };
 
   if (!user) return <LoginScreen onLogin={setUser} />;
@@ -236,10 +291,9 @@ export function App() {
           <div><strong>{user.name}</strong><span>{user.role}</span></div>
           <AppIconButton label="展开账户菜单" onClick={() => { setNotificationOpen(false); setProfileOpen((value) => !value); }}><CaretDown size={16} /></AppIconButton>
           {profileOpen && <div className="profile-menu">
-            <button onClick={() => showToast("已切换到学生团队视角")}><UsersThree size={17} />切换团队视角</button>
+            <button onClick={() => handleNav("设置中心")}><GearSix size={17} />设置中心</button>
             <button onClick={logout}><SignOut size={17} />退出登录</button>
           </div>}
-          <button className="switch-team-button" onClick={() => showToast("已打开团队切换面板")}><UsersThree size={17} />切换团队</button>
         </div>
       </aside>
 
@@ -254,6 +308,13 @@ export function App() {
             ))
           )}
         </select>
+        {teams.length > 1 && (
+          <select className="team-switch" aria-label="切换团队" value={activeTenantId} onChange={(event) => switchTenant(event.target.value)}>
+            {teams.map((team) => (
+              <option key={team.tenantId} value={team.tenantId}>{team.name}{team.isActive ? "（当前）" : ""}</option>
+            ))}
+          </select>
+        )}
           <div className="top-actions">
             <div className="notification-area" ref={notificationAreaRef}>
               <AppIconButton label={`通知，${unreadNotificationCount} 条未读`} aria-expanded={notificationOpen} aria-haspopup="dialog" onClick={() => { setProfileOpen(false); setNotificationOpen((value) => !value); }}><Bell size={22} />{unreadNotificationCount > 0 && <span className="notification-dot">{unreadNotificationCount}</span>}</AppIconButton>
@@ -277,7 +338,7 @@ export function App() {
         </header>
 
         {activeNav === "竞赛项目驾驶舱" ? <section className="workspace">
-          <div className="project-meta"><span><UsersThree size={21} />团队：<strong>智造先锋队</strong></span><i /><span><Cube size={21} />当前阶段：<strong>作品打磨</strong></span></div>
+          <div className="project-meta"><span><UsersThree size={21} />团队：<strong>{activeTeamName}</strong></span><i /><span><Cube size={21} />当前阶段：<strong>作品打磨</strong></span></div>
           <section className="stage-track" aria-label="备赛阶段">
             {stages.map((stage) => <button key={stage.id} className={`stage ${stage.state}`} onClick={() => showToast(`已查看：${stage.label}`)}>
               <span className="stage-number">{stage.id}</span><strong>{stage.label}</strong>
@@ -337,7 +398,7 @@ export function App() {
               </section>
             </aside>
           </div>
-        </section> : <WorkspacePage pageKey={resolvePage(activeNav)} projectId={selectedProjectId} onNavigate={handleNav} onToast={showToast} onOpenDiagnosis={() => setDrawerOpen(true)} />}
+        </section> : <WorkspacePage pageKey={resolvePage(activeNav)} projectId={selectedProjectId} user={user} activeTenantId={activeTenantId} onNavigate={handleNav} onToast={showToast} onOpenDiagnosis={() => setDrawerOpen(true)} onTeamUpdate={refreshTeams} onSwitchTenant={switchTenant} />}
       </main>
 
       {drawerOpen && <div className="drawer-backdrop" onMouseDown={() => setDrawerOpen(false)}>

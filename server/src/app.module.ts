@@ -16,6 +16,7 @@ import { ResourcesModule } from './resources/resources.module';
 import { ProjectsModule } from './projects/projects.module';
 import { LearningModule } from './learning/learning.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { TenantsModule } from './tenants/tenants.module';
 
 /**
  * 根模块：P0.1 接入全局配置、Prisma、健康检查；P0.3 接入真实鉴权（Auth/Users）；
@@ -42,6 +43,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ProjectsModule,
     LearningModule,
     NotificationsModule,
+    TenantsModule,
   ],
 })
 export class AppModule {}

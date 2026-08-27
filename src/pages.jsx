@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, BookOpenText, Brain, CalendarBlank, ChartBar, Check, CheckCircle,
+  ArrowRight, BookOpenText, Brain, Buildings, CalendarBlank, ChartBar, Check, CheckCircle,
   ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
@@ -638,18 +638,179 @@ function LearningPage({ onNavigate, projectId }) {
   );
 }
 
-function SettingsPage({ onToast }) {
+function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTenant }) {
+  const [tenant, setTenant] = useState(DEMO_MODE ? { name: "智造先锋队（演示）", memberCount: 2, projectCount: 1 } : null);
+  const [members, setMembers] = useState(DEMO_MODE ? [{ id: "u1", name: "张老师", username: "teacher", role: "TEACHER" }, { id: "u2", name: "李老师", username: "teacher2", role: "TEACHER" }] : []);
+  const [teamName, setTeamName] = useState(tenant?.name || "");
+  const [newMember, setNewMember] = useState("");
+  const [newRole, setNewRole] = useState("MEMBER");
+  const [pwd, setPwd] = useState({ old: "", next: "", confirm: "" });
   const [preferences, setPreferences] = useState({ task: true, review: true, risk: true });
   const toggle = (key) => setPreferences((current) => ({...current, [key]: !current[key]}));
-  return <section className="module-page"><PageIntro icon={GearSix} title="设置中心" description="管理演示账号、通知方式与工作区偏好。" /><div className="settings-layout"><section className="module-panel account-settings"><h2>账号信息</h2><div className="account-card"><UserCircle size={52} weight="fill" /><div><strong>张老师</strong><span>teacher · 指导教师</span></div><StatusTag tone="green">演示账号</StatusTag></div><p>当前账号仅用于本地原型演示，不连接真实用户系统。</p></section><section className="module-panel preference-settings"><h2>通知设置</h2>{[["task","任务到期提醒","任务截止前 24 小时提醒"],["review","学生提交提醒","学生提交作品或修改结果时提醒"],["risk","风险预警提醒","发现高风险评分点时提醒"]].map(([key,title,desc]) => <button key={key} className="preference-row" onClick={() => toggle(key)}><span><strong>{title}</strong><small>{desc}</small></span><i className={preferences[key] ? 'on' : ''}><b /></i></button>)}<button className="page-primary save-settings" onClick={() => onToast("设置已保存")}>保存设置</button></section></div></section>;
+  // 当前账号可切换的全部团队（含 isActive 标记）
+  const [myTeams, setMyTeams] = useState(DEMO_MODE ? [{ tenantId: "demo-tenant", name: "智造先锋队（演示）", isActive: true }, { tenantId: "innovation-tenant", name: "创新实验队（演示）", isActive: false }] : []);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    if (DEMO_MODE || !user) return undefined;
+    let active = true;
+    Promise.all([api.tenants.me(), api.tenants.members(), api.tenants.mine()])
+      .then(([t, m, list]) => {
+        if (!active) return;
+        setTenant(t);
+        setTeamName(t.name);
+        setMembers(Array.isArray(m) ? m : []);
+        setMyTeams(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [user, activeTenantId]);
+
+  // 重新拉取当前团队资料与成员列表（改名 / 添加 / 移除后复用）
+  const refreshTeam = async () => {
+    if (DEMO_MODE || !user) return;
+    try {
+      const [t, m] = await Promise.all([api.tenants.me(), api.tenants.members()]);
+      setTenant(t);
+      setTeamName(t.name);
+      setMembers(Array.isArray(m) ? m : []);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const saveTeamName = async () => {
+    if (DEMO_MODE) { onToast("演示模式：团队名称未保存（未连接后端）"); return; }
+    try {
+      const r = await api.tenants.rename(teamName);
+      setTenant((current) => ({ ...current, name: r.name }));
+      onTeamUpdate?.();
+      onToast("团队名称已更新");
+    } catch (err) {
+      onToast(err?.message || "保存失败");
+    }
+  };
+
+  const addMember = async () => {
+    if (!newMember.trim()) return;
+    if (DEMO_MODE) { onToast("演示模式：未连接后端"); return; }
+    try {
+      await api.tenants.addMember(newMember.trim(), newRole);
+      setNewMember("");
+      setNewRole("MEMBER");
+      await refreshTeam();
+      onToast("成员已添加");
+    } catch (err) {
+      onToast(err?.message || "添加失败");
+    }
+  };
+
+  const removeMember = async (member) => {
+    if (DEMO_MODE) { onToast("演示模式：未连接后端"); return; }
+    if (!window.confirm(`确定将 ${member.name}（${member.username}）移出当前团队吗？`)) return;
+    try {
+      const updated = await api.tenants.removeMember(member.id);
+      setMembers(Array.isArray(updated) ? updated : []);
+      setTenant((current) => (current ? { ...current, memberCount: Math.max(0, (current.memberCount || 0) - 1) } : current));
+      onToast("已移除该成员");
+    } catch (err) {
+      onToast(err?.message || "移除失败");
+    }
+  };
+
+  // 在设置中心内切换当前账号所属团队
+  const handleSwitch = async (tenantId) => {
+    if (DEMO_MODE) { onToast("演示模式：未连接后端，无法切换团队"); return; }
+    if (switching || !onSwitchTenant) return;
+    try {
+      setSwitching(true);
+      await onSwitchTenant(tenantId, { stay: true });
+      const list = await api.tenants.mine();
+      setMyTeams(Array.isArray(list) ? list : []);
+      await refreshTeam();
+      onToast("已切换到所选团队");
+    } catch (err) {
+      onToast(err?.message || "切换失败");
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const changePassword = async () => {
+    if (pwd.next !== pwd.confirm) { onToast("两次输入的新密码不一致"); return; }
+    if (DEMO_MODE) { onToast("演示模式：密码未修改"); setPwd({ old: "", next: "", confirm: "" }); return; }
+    try {
+      await api.auth.changePassword(pwd.old, pwd.next);
+      onToast("密码修改成功");
+      setPwd({ old: "", next: "", confirm: "" });
+    } catch (err) {
+      onToast(err?.message || "修改失败");
+    }
+  };
+
+  const memberLabel = (role) => ({ OWNER: "负责人", TEACHER: "指导教师", STUDENT: "学生", MEMBER: "成员" }[role] ?? role);
+
+  return <section className="module-page"><PageIntro icon={GearSix} title="设置中心" description="管理团队、成员与账号安全。" /><div className="settings-layout">
+    <section className="module-panel account-settings">
+      <h2>账号信息</h2>
+      <div className="account-card"><UserCircle size={52} weight="fill" /><div><strong>{user?.name || "张老师"}</strong><span>{user?.username || "teacher"} · {user?.role === "STUDENT" ? "学生" : "指导教师"}</span></div><StatusTag tone="green">已登录</StatusTag></div>
+      <h3>当前团队</h3>
+      <p><strong>{tenant?.name || "—"}</strong><span className="muted"> · {tenant ? `${tenant.memberCount} 名成员 / ${tenant.projectCount} 个赛项` : ""}</span></p>
+    </section>
+
+    <section className="module-panel team-settings">
+      <h2>团队管理</h2>
+      <h3>我的团队</h3>
+      <div className="team-switch-list">
+        {myTeams.map((t) => (
+          <div className={`team-switch-item${t.isActive ? " active" : ""}`} key={t.tenantId}>
+            <Buildings size={22} />
+            <span><strong>{t.name}</strong>{t.isActive ? <small className="muted"> · 当前使用中</small> : null}</span>
+            {t.isActive ? <StatusTag tone="green">使用中</StatusTag> : <button className="page-primary small" disabled={switching} onClick={() => handleSwitch(t.tenantId)}>切换到此团队</button>}
+          </div>
+        ))}
+      </div>
+      <label className="field-row"><span>团队名称</span><div className="inline-field"><input value={teamName} onChange={(event) => setTeamName(event.target.value)} aria-label="团队名称" /><button className="page-primary" onClick={saveTeamName}>保存</button></div></label>
+      <h3>团队成员（{members.length}）</h3>
+      <div className="member-list">{members.map((m) => {
+        const isSelf = m.username === user?.username;
+        return (
+          <div className="member-row" key={m.id || m.username}>
+            <UserCircle size={26} />
+            <span><strong>{m.name}{isSelf ? "（我）" : ""}</strong><small>{m.username}</small></span>
+            <StatusTag tone={m.membershipRole === "OWNER" ? "violet" : "blue"}>{memberLabel(m.membershipRole || m.role)}</StatusTag>
+            {!isSelf && !DEMO_MODE && <button className="member-remove" aria-label={`移除 ${m.name}`} title="移出团队" onClick={() => removeMember(m)}><Trash size={16} /></button>}
+          </div>
+        );
+      })}</div>
+      <label className="field-row"><span>添加成员</span><div className="inline-field add-member-field"><input value={newMember} onChange={(event) => setNewMember(event.target.value)} placeholder="输入已注册用户名" aria-label="添加成员用户名" /><select className="role-select" aria-label="成员角色" value={newRole} onChange={(event) => setNewRole(event.target.value)}><option value="MEMBER">成员</option><option value="TEACHER">指导教师</option><option value="STUDENT">学生</option></select><button className="page-primary" onClick={addMember}>添加</button></div></label>
+    </section>
+
+    <section className="module-panel security-settings">
+      <h2>账号安全</h2>
+      <label className="field-row"><span>原密码</span><input type="password" value={pwd.old} onChange={(event) => setPwd((c) => ({ ...c, old: event.target.value }))} aria-label="原密码" /></label>
+      <label className="field-row"><span>新密码</span><input type="password" value={pwd.next} onChange={(event) => setPwd((c) => ({ ...c, next: event.target.value }))} aria-label="新密码" /></label>
+      <label className="field-row"><span>确认新密码</span><input type="password" value={pwd.confirm} onChange={(event) => setPwd((c) => ({ ...c, confirm: event.target.value }))} aria-label="确认新密码" /></label>
+      <button className="page-primary save-settings" onClick={changePassword}>修改密码</button>
+    </section>
+
+    <section className="module-panel preference-settings">
+      <h2>通知设置</h2>
+      {[["task","任务到期提醒","任务截止前 24 小时提醒"],["review","学生提交提醒","学生提交作品或修改结果时提醒"],["risk","风险预警提醒","发现高风险评分点时提醒"]].map(([key,title,desc]) => <button key={key} className="preference-row" onClick={() => toggle(key)}><span><strong>{title}</strong><small>{desc}</small></span><i className={preferences[key] ? 'on' : ''}><b /></i></button>)}
+      <button className="page-primary save-settings" onClick={() => onToast("通知偏好已保存")}>保存设置</button>
+    </section>
+  </div></section>;
 }
 
-export function WorkspacePage({ pageKey, projectId, onNavigate, onToast, onOpenDiagnosis }) {
-  const props = { onNavigate, onToast, onOpenDiagnosis };
+export function WorkspacePage({ pageKey, projectId, user, activeTenantId, onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant }) {
+  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant };
   const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage };
   const Page = pages[pageKey] ?? AnalysisPage;
   if (pageKey === "review" || pageKey === "resources" || pageKey === "learning") {
     return <Page {...props} projectId={projectId} />;
+  }
+  if (pageKey === "settings") {
+    return <Page {...props} user={user} activeTenantId={activeTenantId} />;
   }
   return <Page {...props} />;
 }

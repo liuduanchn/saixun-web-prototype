@@ -12,8 +12,10 @@ datasource db {
 }
 
 enum Role {
+  OWNER
   TEACHER
   STUDENT
+  MEMBER
 }
 
 enum Stage {
@@ -59,27 +61,45 @@ model Tenant {
   createdAt DateTime @default(now())
   users     User[]
   projects  Project[]
+  members   Membership[]
 
   @@index([name])
 }
 
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role      Role     @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, tenantId])
+  @@index([userId])
+  @@index([tenantId])
+}
+
 model User {
-  id           String   @id @default(cuid())
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  username     String
-  passwordHash String
-  name         String
-  role         Role     @default(STUDENT)
-  createdAt    DateTime @default(now())
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  activeTenantId String   @default("")
+  username       String
+  passwordHash   String
+  name           String
+  role           Role     @default(STUDENT)
+  createdAt      DateTime @default(now())
 
   ownedTasks       Task[]          @relation("TaskOwner")
   uploads          WorkVersion[]
   notifications    Notification[]
   learningEvents   LearningEvent[]
+  memberships      Membership[]
 
   @@unique([tenantId, username])
   @@index([tenantId])
+  @@index([activeTenantId])
 }
 
 model Project {

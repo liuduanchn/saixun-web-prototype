@@ -99,6 +99,46 @@ export const api = {
     me() {
       return request("/auth/me");
     },
+    changePassword(oldPassword, newPassword) {
+      return request("/auth/change-password", {
+        method: "POST",
+        body: { oldPassword, newPassword },
+      });
+    },
+  },
+  tenants: {
+    mine() {
+      return request("/tenants/mine");
+    },
+    switch(tenantId) {
+      return request("/tenants/switch", {
+        method: "POST",
+        body: { tenantId },
+      });
+    },
+    me() {
+      return request("/tenants/me");
+    },
+    rename(name) {
+      return request("/tenants/me", {
+        method: "PATCH",
+        body: { name },
+      });
+    },
+    members() {
+      return request("/tenants/members");
+    },
+    addMember(username, role) {
+      return request("/tenants/members", {
+        method: "POST",
+        body: { username, role },
+      });
+    },
+    removeMember(userId) {
+      return request(`/tenants/members/${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+      });
+    },
   },
   tasks: {
     list(projectId) {

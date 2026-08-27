@@ -52,21 +52,22 @@ export class AuthService {
     return safe;
   }
 
-  /** 签发 JWT */
+  /** 签发 JWT：tenantId 使用当前活跃团队 activeTenantId */
   login(user: Omit<User, 'passwordHash'>): AuthResult {
+    const activeTenantId = user.activeTenantId || user.tenantId;
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
       name: user.name,
       role: user.role,
-      tenantId: user.tenantId,
+      tenantId: activeTenantId,
     };
     const authUser: AuthUser = {
       id: user.id,
       username: user.username,
       name: user.name,
       role: user.role,
-      tenantId: user.tenantId,
+      tenantId: activeTenantId,
     };
     return {
       access_token: this.jwt.sign(payload),
@@ -95,8 +96,27 @@ export class AuthService {
       name: dto.name,
       role: (dto.role as Role) ?? 'STUDENT',
     });
+    // 注册即成为该团队 Owner，保证可切换回
+    await this.users.ensureMembership(user.id, tenantId, 'OWNER');
 
     const { passwordHash: _omit, ...safe } = user;
     return this.login(safe);
+  }
+
+  /** 修改密码：校验旧密码 → 更新哈希 */
+  async changePassword(user: JwtPayload, oldPassword: string, newPassword: string): Promise<{ ok: true }> {
+    if (!oldPassword || !newPassword) {
+      throw new BadRequestException('原密码与新密码均不能为空');
+    }
+    if (newPassword.length < 6) {
+      throw new BadRequestException('新密码至少 6 位');
+    }
+    const full = await this.users.findById(user.sub);
+    if (!full) throw new UnauthorizedException('用户不存在');
+    const ok = await bcrypt.compare(oldPassword, full.passwordHash);
+    if (!ok) throw new BadRequestException('原密码错误');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.users.updatePassword(user.sub, passwordHash);
+    return { ok: true };
   }
 }
