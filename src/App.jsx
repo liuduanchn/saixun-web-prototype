@@ -66,9 +66,23 @@ export function App() {
   const [notifications, setNotifications] = useState(initialNotifications);
   const [toast, setToast] = useState("");
   const [created, setCreated] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(PROJECT_ID);
   const taskSummary = useMemo(() => `${tasks.filter((task) => task.done).length}/${tasks.length}`, [tasks]);
   const unreadNotificationCount = useMemo(() => getUnreadNotificationCount(notifications), [notifications]);
   const sidebarPresentation = getSidebarPresentation(sidebarCollapsed);
+
+  // 登录后拉取可切换的赛项列表（演示模式不请求）
+  useEffect(() => {
+    if (DEMO_MODE || !user) return undefined;
+    let active = true;
+    api.projects.list().then((list) => {
+      if (active) setProjects(Array.isArray(list) ? list : []);
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -92,15 +106,15 @@ export function App() {
     return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
   }, [notificationOpen]);
 
-  // 登录后拉取真实任务与评分覆盖率（演示模式保留内置示例数据）
+  // 登录后拉取真实任务与评分覆盖率（演示模式保留内置示例数据），随赛项切换刷新
   useEffect(() => {
     if (DEMO_MODE || !user) return undefined;
     let active = true;
     (async () => {
       try {
         const [taskList, cov] = await Promise.all([
-          api.tasks.list(PROJECT_ID),
-          api.tasks.coverage(PROJECT_ID),
+          api.tasks.list(selectedProjectId),
+          api.tasks.coverage(selectedProjectId),
         ]);
         if (!active) return;
         setTasks(taskList.map(normalizeTask));
@@ -112,7 +126,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, selectedProjectId]);
 
   const showToast = (message) => {
     setToast(message);
@@ -133,7 +147,7 @@ export function App() {
     }
     try {
       const created2 = await api.tasks.create({
-        projectId: PROJECT_ID,
+        projectId: selectedProjectId,
         title: "补齐应用成效证据链并提交教师复核",
         status: "NEEDS_FIX",
       });
@@ -198,7 +212,15 @@ export function App() {
 
       <main className="main-column">
         <header className="topbar">
-          <button className="project-switch" onClick={() => showToast("当前仅展示 AI应用开发赛")}><strong>{activeNav === "竞赛项目驾驶舱" ? "AI应用开发赛" : activeNav}</strong><CaretDown size={18} /></button>
+          <select className="project-switch" aria-label="切换赛项" value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)}>
+          {projects.length === 0 ? (
+            <option value={selectedProjectId}>AI应用开发赛</option>
+          ) : (
+            projects.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))
+          )}
+        </select>
           <div className="top-actions">
             <div className="notification-area" ref={notificationAreaRef}>
               <AppIconButton label={`通知，${unreadNotificationCount} 条未读`} aria-expanded={notificationOpen} aria-haspopup="dialog" onClick={() => { setProfileOpen(false); setNotificationOpen((value) => !value); }}><Bell size={22} />{unreadNotificationCount > 0 && <span className="notification-dot">{unreadNotificationCount}</span>}</AppIconButton>
@@ -276,7 +298,7 @@ export function App() {
               </section>
             </aside>
           </div>
-        </section> : <WorkspacePage pageKey={resolvePage(activeNav)} onNavigate={handleNav} onToast={showToast} onOpenDiagnosis={() => setDrawerOpen(true)} />}
+        </section> : <WorkspacePage pageKey={resolvePage(activeNav)} projectId={selectedProjectId} onNavigate={handleNav} onToast={showToast} onOpenDiagnosis={() => setDrawerOpen(true)} />}
       </main>
 
       {drawerOpen && <div className="drawer-backdrop" onMouseDown={() => setDrawerOpen(false)}>

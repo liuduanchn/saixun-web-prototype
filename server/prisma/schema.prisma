@@ -184,13 +184,15 @@ model DefenseSession {
 }
 
 model Resource {
-  id        String       @id @default(cuid())
-  projectId String
-  project   Project      @relation(fields: [projectId], references: [id])
-  type      ResourceType @default(MATERIAL)
-  name      String
-  fileRef   String?
-  createdAt DateTime     @default(now())
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id])
+  type        ResourceType @default(MATERIAL)
+  name        String
+  description String?
+  fileRef     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   @@index([projectId])
 }

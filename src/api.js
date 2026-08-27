@@ -193,4 +193,37 @@ export const api = {
       return request(`/defense/sessions/${id}`);
     },
   },
+  projects: {
+    list() {
+      return request("/projects");
+    },
+  },
+  resources: {
+    list(projectId) {
+      return request(`/resources?projectId=${encodeURIComponent(projectId)}`);
+    },
+    upload(projectId, file, meta) {
+      const form = new FormData();
+      form.append("file", file);
+      if (meta?.type) form.append("type", meta.type);
+      if (meta?.name) form.append("name", meta.name);
+      if (meta?.description) form.append("description", meta.description);
+      return request(`/resources?projectId=${encodeURIComponent(projectId)}`, {
+        method: "POST",
+        body: form,
+        isForm: true,
+      });
+    },
+    remove(id) {
+      return request(`/resources/${id}`, { method: "DELETE" });
+    },
+    url(key) {
+      return `${API_BASE}/files/${encodeURIComponent(key)}`;
+    },
+  },
+  review: {
+    summary(projectId) {
+      return request(`/review/summary?projectId=${encodeURIComponent(projectId)}`);
+    },
+  },
 };

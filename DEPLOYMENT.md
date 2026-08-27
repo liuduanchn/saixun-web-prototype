@@ -29,9 +29,9 @@
 | `DATABASE_URL` | （由 Postgres 插件注入） | 无需手填 |
 | `JWT_SECRET` | 一段强随机串，如 `openssl rand -hex 32` | **务必替换**，不要用默认值 |
 | `JWT_EXPIRES_IN` | `7d` | |
-| `AI_BASE_URL` | `https://api.openai.com/v1` 或 DeepSeek/通义地址 | 不填也可运行（走启发式兜底） |
-| `AI_API_KEY` | 你的 LLM Key | 留空则诊断走确定性启发式，仍真实落库 |
-| `AI_MODEL` | `gpt-4o-mini` 等 | |
+| `AI_BASE_URL` | `https://api.siliconflow.cn/v1` | 硅基流动（OpenAI 兼容）；换其他厂商改此值 |
+| `AI_API_KEY` | 你的硅基流动 Key（`sk-` 开头） | 留空则诊断走确定性启发式，仍真实落库 |
+| `AI_MODEL` | `deepseek-ai/DeepSeek-V3` | 模型名须带 `deepseek-ai/` 前缀 |
 | `STORAGE_DIR` | `./uploads`（默认） | 临时存储；若需持久化，挂载 Volume 到 `/data` 并设 `STORAGE_DIR=/data/uploads` |
 | `PORT` | （Railway 自动注入） | 无需手填 |
 
@@ -76,7 +76,55 @@
 
 ---
 
-## 四、常见问题
+## 四、AI 大模型配置（赛项解析 / 模拟答辩 / 诊断）
+
+智能体调用大模型走后端的 `OpenAiCompatService`，**OpenAI 兼容接口**，只要填对三个环境变量即可，不绑定任何厂商。
+
+### 1. 已验证推荐：硅基流动（SiliconFlow）上的 DeepSeek
+
+| 变量 | 值 |
+|---|---|
+| `AI_BASE_URL` | `https://api.siliconflow.cn/v1` |
+| `AI_API_KEY` | 你的硅基流动 Key（`sk-` 开头，从 cloud.siliconflow.cn → API密钥 获取） |
+| `AI_MODEL` | `deepseek-ai/DeepSeek-V3` |
+
+> 模型名**必须带前缀** `deepseek-ai/DeepSeek-V3`，只写 `DeepSeek-V3` 会 404。
+> 备选：`deepseek-ai/DeepSeek-R1`（强推理，更慢更贵，输入输出价约为 V3 一倍）。
+
+### 2. 本地开发（server/.env 已配好）
+
+`server/.env` 现在应含：
+
+```env
+AI_BASE_URL=https://api.siliconflow.cn/v1
+AI_API_KEY=sk-你的真实key
+AI_MODEL=deepseek-ai/DeepSeek-V3
+```
+
+保存后**重启后端**（`node dist/main.js` 或 `npm run start:dev`），赛项解析 / 模拟答辩即自动切真实 DeepSeek，不再走启发式兜底。
+
+### 3. 线上部署
+
+在后端服务（Railway / Render / Zeabur / HF Spaces）的 **Environment Variables** 加同样三行。前端（Vercel）**无需改动**——AI 调用全在后端。
+
+### 4. 其他兼容厂商速查
+
+| 厂商 | `AI_BASE_URL` | `AI_MODEL` 示例 |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| DeepSeek 官方 | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+
+### 5. 验证与排错
+
+- 配好后前端「赛项解析中心」粘贴评分标准 →「智能解析」，返回贴合赛项的结构化要素（而非按分隔符切分的启发式），即表示已接通。
+- 接口报 `500 AI 调用失败 <状态码>`：看后端日志定位——`401` key 错误、`404` 模型名错、`429` 额度/频率受限、`5xx` 厂商侧异常。
+- 未配 `AI_API_KEY`：所有 AI 能力自动回退确定性启发式，仍真实落库，不影响演示。
+
+---
+
+## 六、常见问题
 - **上线后登录 401/网络错误**：检查 `VITE_API_BASE` 是否拼到 `/api` 结尾、Railway 后端域名是否已 Generate Domain、CORS 后端已 `enableCors()` 放行所有来源（无需额外配置）。
 - **数据库为空 / 无 demo-project**：确认 Railway 构建命令包含 `prisma migrate deploy` 与 `prisma:seed`；可到后端服务手动 Run `npm run prisma:seed` 一次。
 - **上传文件重启后丢失**：Railway 文件系统临时，挂 Volume 并改 `STORAGE_DIR` 到挂载点即可持久化。

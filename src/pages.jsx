@@ -4,7 +4,7 @@ import {
   ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
-  Sparkle, Student, Target, TrendUp, UserCircle, UsersThree, WarningCircle, X,
+  Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X,
 } from "@phosphor-icons/react";
 import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
 import { normalizeTask, buildColumns } from "./taskModel.js";
@@ -433,24 +433,118 @@ function DefensePage({ onToast }) {
   </section>;
 }
 
-function ReviewPage({ onToast }) {
+function ReviewPage({ projectId, onToast }) {
+  const [summary, setSummary] = useState(DEMO_MODE ? null : null);
+  const [loading, setLoading] = useState(!DEMO_MODE);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (DEMO_MODE) return undefined;
+    let active = true;
+    setLoading(true);
+    setError("");
+    api.review.summary(projectId).then((data) => {
+      if (active) setSummary(data);
+    }).catch((err) => {
+      if (active) setError(err?.message || "复盘数据加载失败");
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const metrics = summary?.metrics ?? { taskCount: 12, workVersions: 3, issuesClosed: 5, defenseRounds: 3 };
+  const coverage = summary?.coverage ?? { totalScorePoints: 25, coveredScorePoints: 18, coverageRate: 72 };
+  const growthRaw = summary?.abilityGrowth ?? [["标准理解",86],["证据意识",78],["作品迭代",82],["答辩表达",88],["团队协作",74]];
+  const growth = (Array.isArray(growthRaw) ? growthRaw : []).map((item) =>
+    Array.isArray(item) ? { label: item[0], value: item[1] } : { label: item?.label, value: item?.value },
+  );
+  const report = summary?.report ?? {
+    effective: ["需求分析完整；迭代节奏合理；答辩表达逻辑清晰"],
+    shortcomings: ["关键证据链不完整；边界条件考虑不全面"],
+    suggestions: ["补充对照证据；强化异常场景；完善创新点论证"],
+  };
+
+  const metricCards = [
+    [ClipboardText, "训练任务", `${metrics.taskCount} 个`, "blue"],
+    [FileDoc, "作品版本", `${metrics.workVersions} 个`, "cyan"],
+    [CheckCircle, "问题关闭", `${metrics.issuesClosed} 个`, "green"],
+    [BookOpenText, "答辩轮次", `${metrics.defenseRounds} 个`, "violet"],
+  ];
+
   return <section className="module-page">
-    <PageIntro icon={Medal} title="赛后复盘" description="汇总训练过程、能力成长与关键问题，沉淀为下一轮可复用的备赛资产。" action={<button className="page-primary" onClick={() => onToast("复盘报告已生成")}>生成复盘报告</button>} />
-    <div className="review-metrics">{[[ClipboardText,"训练任务","12 个","blue"],[FileDoc,"作品版本","3 个","cyan"],[CheckCircle,"问题关闭","5 个","green"],[BookOpenText,"答辩轮次","3 个","violet"]].map(([Icon,label,value,tone]) => <article className={tone} key={label}><Icon size={34} weight="duotone" /><span><small>{label}</small><strong>{value}</strong></span></article>)}</div><div className="review-grid"><section className="module-panel growth-panel"><h2>能力成长记录</h2>{[["标准理解",86],["证据意识",78],["作品迭代",82],["答辩表达",88],["团队协作",74]].map(([label,value]) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}</strong></div>)}</section><section className="module-panel report-panel"><h2>赛后复盘报告</h2>{[[CheckCircle,"有效做法","需求分析完整；迭代节奏合理；答辩表达逻辑清晰","green"],[WarningCircle,"主要短板","关键证据链不完整；边界条件考虑不全面","orange"],[TrendUp,"下一轮建议","补充对照证据；强化异常场景；完善创新点论证","blue"]].map(([Icon,title,text,tone]) => <article className={tone} key={title}><Icon size={27} weight="duotone" /><div><strong>{title}</strong><p>{text}</p></div></article>)}</section></div><section className="module-panel case-library"><h2>案例沉淀</h2>{[[FileDoc,"赛项模板","沉淀可复用的赛项分析模板"],[Lightbulb,"典型问题","汇总高频问题与解决思路"],[Medal,"优秀做法","沉淀优秀做法与参考案例"]].map(([Icon,title,desc]) => <button key={title} onClick={() => onToast(`已打开：${title}`)}><Icon size={30} weight="duotone" /><span><strong>{title}</strong><small>{desc}</small></span><ArrowRight size={18} /></button>)}</section>
+    <PageIntro icon={Medal} title="赛后复盘" description="汇总训练过程、能力成长与关键问题，沉淀为下一轮可复用的备赛资产。" action={<button className="page-primary" onClick={() => { if (DEMO_MODE) onToast("复盘报告已生成"); else { setLoading(true); api.review.summary(projectId).then(setSummary).catch((err) => onToast(err?.message || "刷新失败")).finally(() => setLoading(false)); } }}>{loading ? "生成中…" : "生成复盘报告"}</button>} />
+    {loading && <p className="empty-state">正在汇总复盘数据…</p>}
+    {error && <p className="empty-state">{error}</p>}
+    {!loading && <><div className="review-metrics">{metricCards.map(([Icon,label,value,tone]) => <article className={tone} key={label}><Icon size={34} weight="duotone" /><span><small>{label}</small><strong>{value}</strong></span></article>)}</div><div className="review-grid"><section className="module-panel growth-panel"><h2>能力成长记录</h2>{growth.map(({label, value}) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}</strong></div>)}<h3>评分覆盖率</h3><div className="ability-row"><span>已覆盖 {coverage.coveredScorePoints}/{coverage.totalScorePoints}</span><div><i style={{width:`${coverage.coverageRate}%`}} /></div><strong>{coverage.coverageRate}%</strong></div></section><section className="module-panel report-panel"><h2>赛后复盘报告</h2>{[[CheckCircle,"有效做法",report.effective,"green"],[WarningCircle,"主要短板",report.shortcomings,"orange"],[TrendUp,"下一轮建议",report.suggestions,"blue"]].map(([Icon,title,items,tone]) => <article className={tone} key={title}><Icon size={27} weight="duotone" /><div><strong>{title}</strong>{items.map((text,index) => <p key={index}>{text}</p>)}</div></article>)}</section></div></>}
+    <section className="module-panel case-library"><h2>案例沉淀</h2>{[[FileDoc,"赛项模板","沉淀可复用的赛项分析模板"],[Lightbulb,"典型问题","汇总高频问题与解决思路"],[Medal,"优秀做法","沉淀优秀做法与参考案例"]].map(([Icon,title,desc]) => <button key={title} onClick={() => onToast(`已打开：${title}`)}><Icon size={30} weight="duotone" /><span><strong>{title}</strong><small>{desc}</small></span><ArrowRight size={18} /></button>)}</section>
   </section>;
 }
 
-const resources = [
-  ["赛项解析模板", "模板", "将赛项规程快速拆解为评分点清单", "2026-08-22"],
-  ["应用成效证据清单", "评分材料", "测试样本、统计口径和前后对比核验表", "2026-08-24"],
-  ["优秀作品诊断案例", "案例", "从证据缺口到修改任务的完整示例", "2026-08-20"],
-  ["模拟答辩高频问题", "题库", "围绕创新、技术和应用价值的追问题库", "2026-08-23"],
-];
+const RESOURCE_TYPE_LABEL = { MATERIAL: "模板", RUBRIC: "评分材料", CASE: "案例", QUESTION_BANK: "题库", OTHER: "其他" };
 
-function ResourcesPage({ onToast }) {
+function ResourcesPage({ projectId, onToast }) {
+  const [items, setItems] = useState(DEMO_MODE ? [] : []);
+  const [loading, setLoading] = useState(!DEMO_MODE);
+  const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => resources.filter((item) => item.join("").includes(query.trim())), [query]);
-  return <section className="module-page"><PageIntro icon={FolderOpen} title="资源知识库" description="集中管理赛项材料、训练模板、诊断案例与答辩资源。" action={<button className="page-primary" onClick={() => onToast("演示模式：已打开资源上传入口")}><CloudArrowUp size={19} />上传资源</button>} /><section className="module-panel resource-panel"><div className="resource-toolbar"><div className="search-field"><MagnifyingGlass size={19} /><input aria-label="搜索资源" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资源名称、类型或说明" /></div><StatusTag>{filtered.length} 项资源</StatusTag></div><div className="resource-table"><div className="resource-head"><span>资源名称</span><span>类型</span><span>说明</span><span>更新时间</span><span /></div>{filtered.map(([name,type,desc,date]) => <button key={name} onClick={() => onToast(`已打开资源：${name}`)}><span><FileDoc size={24} />{name}</span><StatusTag tone={type === '案例' ? 'green' : 'blue'}>{type}</StatusTag><span>{desc}</span><span>{date}</span><ArrowRight size={17} /></button>)}</div>{filtered.length === 0 && <p className="empty-state">未找到匹配资源，请调整关键词。</p>}</section></section>;
+  const [uploading, setUploading] = useState(false);
+
+  const load = () => {
+    if (DEMO_MODE) return undefined;
+    setLoading(true);
+    setError("");
+    api.resources.list(projectId).then((data) => {
+      setItems(Array.isArray(data) ? data : []);
+    }).catch((err) => {
+      setError(err?.message || "资源加载失败");
+    }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, [projectId]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim();
+    if (!q) return items;
+    return items.filter((item) => `${item.name} ${item.type} ${item.description ?? ""}`.includes(q));
+  }, [items, query]);
+
+  const onUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (DEMO_MODE) {
+      onToast("演示模式：已打开资源上传入口");
+      return;
+    }
+    setUploading(true);
+    try {
+      const name = file.name.replace(/\.[^.]+$/, "");
+      await api.resources.upload(projectId, file, { name, type: "MATERIAL", description: name });
+      onToast("资源已上传");
+      load();
+    } catch (err) {
+      onToast(err?.message || "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onDelete = async (id) => {
+    if (DEMO_MODE) return;
+    try {
+      await api.resources.remove(id);
+      setItems((current) => current.filter((item) => item.id !== id));
+    } catch (err) {
+      onToast(err?.message || "删除失败");
+    }
+  };
+
+  return <section className="module-page"><PageIntro icon={FolderOpen} title="资源知识库" description="集中管理赛项材料、训练模板、诊断案例与答辩资源。" action={<label className="page-primary upload-button">{uploading ? "上传中…" : <><CloudArrowUp size={19} />上传资源</>}<input type="file" hidden onChange={onUpload} /></label>} /><section className="module-panel resource-panel"><div className="resource-toolbar"><div className="search-field"><MagnifyingGlass size={19} /><input aria-label="搜索资源" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资源名称、类型或说明" /></div><StatusTag>{filtered.length} 项资源</StatusTag></div>{loading && <p className="empty-state">正在加载资源…</p>}{error && <p className="empty-state">{error}</p>}<div className="resource-table"><div className="resource-head"><span>资源名称</span><span>类型</span><span>说明</span><span>更新时间</span><span /></div>{filtered.map((item) => <div key={item.id} className="resource-row"><span><FileDoc size={24} />{item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="resource-link">{item.name}</a> : item.name}</span><StatusTag tone={item.type === "CASE" ? "green" : "blue"}>{RESOURCE_TYPE_LABEL[item.type] ?? item.type}</StatusTag><span>{item.description || "—"}</span><span>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</span><button className="resource-delete" aria-label="删除资源" onClick={() => onDelete(item.id)}><Trash size={17} /></button></div>)}</div>{!loading && filtered.length === 0 && <p className="empty-state">暂无资源，点击右上角上传第一个资源。</p>}</section></section>;
 }
 
 function LearningPage({ onNavigate }) {
@@ -463,10 +557,13 @@ function SettingsPage({ onToast }) {
   return <section className="module-page"><PageIntro icon={GearSix} title="设置中心" description="管理演示账号、通知方式与工作区偏好。" /><div className="settings-layout"><section className="module-panel account-settings"><h2>账号信息</h2><div className="account-card"><UserCircle size={52} weight="fill" /><div><strong>张老师</strong><span>teacher · 指导教师</span></div><StatusTag tone="green">演示账号</StatusTag></div><p>当前账号仅用于本地原型演示，不连接真实用户系统。</p></section><section className="module-panel preference-settings"><h2>通知设置</h2>{[["task","任务到期提醒","任务截止前 24 小时提醒"],["review","学生提交提醒","学生提交作品或修改结果时提醒"],["risk","风险预警提醒","发现高风险评分点时提醒"]].map(([key,title,desc]) => <button key={key} className="preference-row" onClick={() => toggle(key)}><span><strong>{title}</strong><small>{desc}</small></span><i className={preferences[key] ? 'on' : ''}><b /></i></button>)}<button className="page-primary save-settings" onClick={() => onToast("设置已保存")}>保存设置</button></section></div></section>;
 }
 
-export function WorkspacePage({ pageKey, onNavigate, onToast, onOpenDiagnosis }) {
+export function WorkspacePage({ pageKey, projectId, onNavigate, onToast, onOpenDiagnosis }) {
   const props = { onNavigate, onToast, onOpenDiagnosis };
   const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage };
   const Page = pages[pageKey] ?? AnalysisPage;
+  if (pageKey === "review" || pageKey === "resources") {
+    return <Page {...props} projectId={projectId} />;
+  }
   return <Page {...props} />;
 }
 

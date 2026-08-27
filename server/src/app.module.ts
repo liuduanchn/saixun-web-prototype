@@ -11,6 +11,9 @@ import { WorksModule } from './works/works.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { CriteriaModule } from './criteria/criteria.module';
 import { DefenseModule } from './defense/defense.module';
+import { ReviewModule } from './review/review.module';
+import { ResourcesModule } from './resources/resources.module';
+import { ProjectsModule } from './projects/projects.module';
 
 /**
  * 根模块：P0.1 接入全局配置、Prisma、健康检查；P0.3 接入真实鉴权（Auth/Users）；
@@ -32,6 +35,9 @@ import { DefenseModule } from './defense/defense.module';
     DiagnosisModule,
     CriteriaModule,
     DefenseModule,
+    ReviewModule,
+    ResourcesModule,
+    ProjectsModule,
   ],
 })
 export class AppModule {}
