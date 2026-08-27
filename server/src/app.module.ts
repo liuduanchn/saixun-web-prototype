@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -27,6 +29,10 @@ import { TenantsModule } from './tenants/tenants.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Phase C-2: 全局默认限流（登录接口额外加严）
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60000, limit: 100 },
+    ]),
     PrismaModule,
     HealthModule,
     UsersModule,
@@ -45,5 +51,7 @@ import { TenantsModule } from './tenants/tenants.module';
     NotificationsModule,
     TenantsModule,
   ],
+  // Phase C-2: 全局注册节流守卫（forRoot 仅声明限流器，须显式绑定 guard）
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

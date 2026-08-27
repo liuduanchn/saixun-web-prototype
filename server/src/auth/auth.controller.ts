@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Post, Get, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -13,6 +14,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async login(@Body() body: unknown) {
     const dto = LoginSchema.safeParse(body);
     if (!dto.success) {

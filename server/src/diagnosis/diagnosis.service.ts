@@ -230,6 +230,7 @@ export class DiagnosisService {
         data: {
           projectId: diag.workVersion.projectId,
           title: `修改：${diag.scorePoint.name}`,
+          ownerId: diag.workVersion.uploaderId,
           status: 'NEEDS_FIX',
           done: false,
           scorePoints: { connect: [{ id: diag.scorePointId }] },
