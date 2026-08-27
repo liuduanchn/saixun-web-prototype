@@ -92,8 +92,75 @@ async function main() {
     }
   }
 
+  // 6. 学习记录与通知（仅在该教师用户无数据时写入，幂等）
+  const teacherUser = await prisma.user.findUnique({
+    where: { tenantId_username: { tenantId: tenant.id, username: 'teacher' } },
+  });
+  if (teacherUser) {
+    const eventCount = await prisma.learningEvent.count({ where: { userId: teacherUser.id } });
+    if (eventCount === 0) {
+      const base = Date.now();
+      const day = 86400000;
+      const events: Array<{
+        type: string;
+        payload: Record<string, unknown>;
+        ago: number;
+      }> = [
+        { type: 'CRITERIA_PARSED', payload: { title: '赛项解析：AI应用开发赛评分标准', points: 15 }, ago: 12 },
+        { type: 'TASK_CREATED', payload: { title: '梳理赛项规程与评分标准', status: 'DONE' }, ago: 10 },
+        { type: 'WORK_UPLOADED', payload: { title: '作品说明书 V1', version: 1 }, ago: 8 },
+        { type: 'DIAGNOSIS_RUN', payload: { title: '作品诊断：V1', findings: 27 }, ago: 7 },
+        { type: 'TASK_CREATED', payload: { title: '性能压测与优化', status: 'NEEDS_FIX' }, ago: 5 },
+        { type: 'DEFENSE_RUN', payload: { title: '模拟答辩第 1 轮', rounds: 3 }, ago: 3 },
+        { type: 'REVIEW_GENERATED', payload: { title: '赛后复盘报告', coverage: 33 }, ago: 1 },
+      ];
+      for (const e of events) {
+        await prisma.learningEvent.create({
+          data: {
+            userId: teacherUser.id,
+            type: e.type,
+            payload: e.payload as any,
+            createdAt: new Date(base - e.ago * day),
+          },
+        });
+      }
+    }
+
+    const notifCount = await prisma.notification.count({ where: { userId: teacherUser.id } });
+    if (notifCount === 0) {
+      await prisma.notification.createMany({
+        data: [
+          {
+            userId: teacherUser.id,
+            category: '作品诊断',
+            title: '作品 V1 诊断完成',
+            detail: '共识别 27 条问题发现，其中 17 条高风险，建议优先处理。',
+            targetNav: '作品诊断中心',
+            read: false,
+          },
+          {
+            userId: teacherUser.id,
+            category: '任务复核',
+            title: '修改任务待复核',
+            detail: '「性能压测与优化」已提交，等待教师复核与闭环。',
+            targetNav: '训练任务中心',
+            read: false,
+          },
+          {
+            userId: teacherUser.id,
+            category: '模拟答辩',
+            title: '答辩反馈已生成',
+            detail: '第 3 轮模拟答辩完成，表达维度评分 88。',
+            targetNav: '模拟答辩室',
+            read: true,
+          },
+        ],
+      });
+    }
+  }
+
   // eslint-disable-next-line no-console
-  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / AI应用开发赛 + 15 评分点 + 演示任务');
+  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / AI应用开发赛 + 15 评分点 + 演示任务 + 学习记录 + 通知');
 }
 
 main()

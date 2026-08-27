@@ -226,4 +226,23 @@ export const api = {
       return request(`/review/summary?projectId=${encodeURIComponent(projectId)}`);
     },
   },
+  learning: {
+    events() {
+      return request(`/learning/events`);
+    },
+    summary() {
+      return request(`/learning/summary`);
+    },
+  },
+  notifications: {
+    list() {
+      return request(`/notifications`);
+    },
+    markRead(id) {
+      return request(`/notifications/${id}/read`, { method: "PATCH" });
+    },
+    markAllRead() {
+      return request(`/notifications/read-all`, { method: "POST" });
+    },
+  },
 };

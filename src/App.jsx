@@ -52,6 +52,20 @@ function AppIconButton({ children, label, onClick, ...props }) {
   return <button className="icon-button" aria-label={label} onClick={onClick} {...props}>{children}</button>;
 }
 
+const NOTIF_ICONS = {
+  "作品诊断": FileText,
+  "任务复核": ListChecks,
+  "作品审核": FileText,
+  "模拟答辩": UsersThree,
+};
+
+function formatNotifTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function App() {
   const profileAreaRef = useRef(null);
   const notificationAreaRef = useRef(null);
@@ -78,6 +92,18 @@ export function App() {
     let active = true;
     api.projects.list().then((list) => {
       if (active) setProjects(Array.isArray(list) ? list : []);
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  // 登录后拉取真实通知（演示模式保留内置示例）
+  useEffect(() => {
+    if (DEMO_MODE || !user) return undefined;
+    let active = true;
+    api.notifications.list().then((list) => {
+      if (active && Array.isArray(list)) setNotifications(list);
     }).catch(() => {});
     return () => {
       active = false;
@@ -166,9 +192,16 @@ export function App() {
   };
   const openNotification = (notification) => {
     setNotifications((current) => markNotificationRead(current, notification.id));
+    if (!DEMO_MODE && notification.id) {
+      api.notifications.markRead(notification.id).catch(() => {});
+    }
     setActiveNav(resolveNotificationTarget(notification));
     setNotificationOpen(false);
     showToast(`已打开：${notification.title}`);
+  };
+  const markAllNotifications = () => {
+    setNotifications((current) => markAllNotificationsRead(current));
+    if (!DEMO_MODE) api.notifications.markAllRead().catch(() => {});
   };
   const logout = () => {
     clearSession(window.localStorage);
@@ -225,12 +258,18 @@ export function App() {
             <div className="notification-area" ref={notificationAreaRef}>
               <AppIconButton label={`通知，${unreadNotificationCount} 条未读`} aria-expanded={notificationOpen} aria-haspopup="dialog" onClick={() => { setProfileOpen(false); setNotificationOpen((value) => !value); }}><Bell size={22} />{unreadNotificationCount > 0 && <span className="notification-dot">{unreadNotificationCount}</span>}</AppIconButton>
               {notificationOpen && <section className="notification-panel" aria-label="通知中心">
-                <header><div><h2>通知中心</h2><span>{unreadNotificationCount > 0 ? `${unreadNotificationCount} 条未读` : "全部已读"}</span></div><button disabled={unreadNotificationCount === 0} onClick={() => setNotifications((current) => markAllNotificationsRead(current))}>全部标为已读</button></header>
-                <div className="notification-list">{notifications.map((notification) => <button className={`notification-item ${notification.read ? "read" : "unread"}`} key={notification.id} onClick={() => openNotification(notification)}>
-                  <span className="notification-symbol">{notification.id === 1 ? <FileText size={21} /> : <ListChecks size={21} />}</span>
-                  <span className="notification-copy"><small>{notification.category}</small><strong>{notification.title}</strong><p>{notification.detail}</p><time>{notification.time}</time></span>
-                  <span className="notification-link">查看详情<CaretRight size={14} /></span>
-                </button>)}</div>
+                <header><div><h2>通知中心</h2><span>{unreadNotificationCount > 0 ? `${unreadNotificationCount} 条未读` : "全部已读"}</span></div><button disabled={unreadNotificationCount === 0} onClick={markAllNotifications}>全部标为已读</button></header>
+                <div className="notification-list">{notifications.map((notification) => {
+                  const NotifIcon = NOTIF_ICONS[notification.category] ?? Bell;
+                  const notifTime = notification.time ?? formatNotifTime(notification.createdAt);
+                  return (
+                    <button className={`notification-item ${notification.read ? "read" : "unread"}`} key={notification.id} onClick={() => openNotification(notification)}>
+                      <span className="notification-symbol"><NotifIcon size={21} /></span>
+                      <span className="notification-copy"><small>{notification.category}</small><strong>{notification.title}</strong><p>{notification.detail}</p><time>{notifTime}</time></span>
+                      <span className="notification-link">查看详情<CaretRight size={14} /></span>
+                    </button>
+                  );
+                })}</div>
               </section>}
             </div>
             <span className="today">2026-08-24&nbsp;&nbsp;星期一</span>

@@ -547,8 +547,95 @@ function ResourcesPage({ projectId, onToast }) {
   return <section className="module-page"><PageIntro icon={FolderOpen} title="资源知识库" description="集中管理赛项材料、训练模板、诊断案例与答辩资源。" action={<label className="page-primary upload-button">{uploading ? "上传中…" : <><CloudArrowUp size={19} />上传资源</>}<input type="file" hidden onChange={onUpload} /></label>} /><section className="module-panel resource-panel"><div className="resource-toolbar"><div className="search-field"><MagnifyingGlass size={19} /><input aria-label="搜索资源" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资源名称、类型或说明" /></div><StatusTag>{filtered.length} 项资源</StatusTag></div>{loading && <p className="empty-state">正在加载资源…</p>}{error && <p className="empty-state">{error}</p>}<div className="resource-table"><div className="resource-head"><span>资源名称</span><span>类型</span><span>说明</span><span>更新时间</span><span /></div>{filtered.map((item) => <div key={item.id} className="resource-row"><span><FileDoc size={24} />{item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="resource-link">{item.name}</a> : item.name}</span><StatusTag tone={item.type === "CASE" ? "green" : "blue"}>{RESOURCE_TYPE_LABEL[item.type] ?? item.type}</StatusTag><span>{item.description || "—"}</span><span>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</span><button className="resource-delete" aria-label="删除资源" onClick={() => onDelete(item.id)}><Trash size={17} /></button></div>)}</div>{!loading && filtered.length === 0 && <p className="empty-state">暂无资源，点击右上角上传第一个资源。</p>}</section></section>;
 }
 
-function LearningPage({ onNavigate }) {
-  return <section className="module-page"><PageIntro icon={GraduationCap} title="学习记录" description="记录个人训练轨迹、能力变化和教师反馈，形成可回顾的成长档案。" action={<button className="page-primary" onClick={() => onNavigate("训练任务中心")}>继续训练<ArrowRight size={18} /></button>} /><div className="learning-layout"><section className="module-panel learning-summary"><h2>本周学习概览</h2><div className="metric-trio"><span><strong>7</strong><small>完成任务</small></span><span><strong>9.5h</strong><small>训练时长</small></span><span><strong>3</strong><small>教师反馈</small></span></div><h3>能力进度</h3>{[["证据意识",78],["方案设计",82],["答辩表达",88]].map(([label,value]) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}%</strong></div>)}</section><section className="module-panel timeline-panel"><h2>近期学习轨迹</h2>{[[CheckCircle,"完成作品文档修订","补充了应用场景和价值说明","今天 10:32"],[MonitorPlay,"完成作品诊断","识别 3 个应用成效证据缺口","昨天 16:20"],[BookOpenText,"参加第 2 轮模拟答辩","证据充分度得分提升至 4/5","08-23 14:10"],[UsersThree,"收到教师复核意见","建议补充 12 组测试样本","08-22 09:45"]].map(([Icon,title,desc,time]) => <article key={time}><span><Icon size={20} /></span><div><strong>{title}</strong><p>{desc}</p></div><small>{time}</small></article>)}</section></div></section>;
+const LEARNING_ICONS = {
+  CRITERIA_PARSED: BookOpenText,
+  TASK_CREATED: ClipboardText,
+  TASK_DONE: CheckCircle,
+  WORK_UPLOADED: CloudArrowUp,
+  DIAGNOSIS_RUN: MagnifyingGlass,
+  DEFENSE_RUN: UsersThree,
+  REVIEW_GENERATED: Medal,
+};
+const LEARNING_DEMO_EVENTS = [
+  { id: "d1", type: "CRITERIA_PARSED", title: "赛项解析：AI应用开发赛评分标准", detail: "拆解 15 个评分点", createdAt: new Date(Date.now() - 12 * 86400000).toISOString() },
+  { id: "d2", type: "WORK_UPLOADED", title: "作品说明书 V1", detail: "上传版本 V1", createdAt: new Date(Date.now() - 8 * 86400000).toISOString() },
+  { id: "d3", type: "DIAGNOSIS_RUN", title: "作品诊断：V1", detail: "识别 27 条问题发现", createdAt: new Date(Date.now() - 7 * 86400000).toISOString() },
+  { id: "d4", type: "DEFENSE_RUN", title: "模拟答辩第 1 轮", detail: "完成 3 轮模拟答辩", createdAt: new Date(Date.now() - 3 * 86400000).toISOString() },
+  { id: "d5", type: "REVIEW_GENERATED", title: "赛后复盘报告", detail: "覆盖率 33%", createdAt: new Date(Date.now() - 1 * 86400000).toISOString() },
+];
+const LEARNING_DEMO_SUMMARY = {
+  abilities: [
+    { label: "赛项解析", value: 100 },
+    { label: "任务执行", value: 72 },
+    { label: "作品迭代", value: 35 },
+    { label: "诊断复盘", value: 70 },
+    { label: "答辩训练", value: 45 },
+    { label: "学习活跃度", value: 60 },
+  ],
+  totalEvents: LEARNING_DEMO_EVENTS.length,
+};
+
+function formatEventTime(iso) {
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function LearningPage({ onNavigate, projectId }) {
+  const [events, setEvents] = useState(DEMO_MODE ? LEARNING_DEMO_EVENTS : []);
+  const [summary, setSummary] = useState(DEMO_MODE ? LEARNING_DEMO_SUMMARY : null);
+  const [loading, setLoading] = useState(!DEMO_MODE);
+
+  useEffect(() => {
+    if (DEMO_MODE) return undefined;
+    let active = true;
+    setLoading(true);
+    Promise.all([api.learning.events(), api.learning.summary()])
+      .then(([ev, sum]) => {
+        if (!active) return;
+        setEvents(Array.isArray(ev) ? ev : []);
+        setSummary(sum);
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const abilities = summary?.abilities ?? LEARNING_DEMO_SUMMARY.abilities;
+  const totalEvents = summary?.totalEvents ?? events.length;
+
+  return (
+    <section className="module-page">
+      <PageIntro icon={GraduationCap} title="学习记录" description="记录个人训练轨迹、能力变化和教师反馈，形成可回顾的成长档案。" action={<button className="page-primary" onClick={() => onNavigate("训练任务中心")}>继续训练<ArrowRight size={18} /></button>} />
+      <div className="learning-layout">
+        <section className="module-panel learning-summary">
+          <h2>学习概览</h2>
+          <div className="metric-trio">
+            <span><strong>{totalEvents}</strong><small>学习事件</small></span>
+            <span><strong>{abilities.length}</strong><small>能力维度</small></span>
+            <span><strong>{Math.round(abilities.reduce((s, a) => s + a.value, 0) / abilities.length)}</strong><small>平均能力值</small></span>
+          </div>
+          <h3>能力进度</h3>
+          {abilities.map((a) => <div className="ability-row" key={a.label}><span>{a.label}</span><div><i style={{ width: `${a.value}%` }} /></div><strong>{a.value}%</strong></div>)}
+        </section>
+        <section className="module-panel timeline-panel">
+          <h2>近期学习轨迹</h2>
+          {loading && <p className="empty-state">加载中…</p>}
+          {!loading && events.length === 0 && <p className="empty-state">暂无学习记录，完成训练任务或作品诊断后将自动沉淀。</p>}
+          {events.map((ev) => {
+            const Icon = LEARNING_ICONS[ev.type] ?? CheckCircle;
+            return (
+              <article key={ev.id}>
+                <span><Icon size={20} /></span>
+                <div><strong>{ev.title}</strong>{ev.detail && <p>{ev.detail}</p>}</div>
+                <small>{formatEventTime(ev.createdAt)}</small>
+              </article>
+            );
+          })}
+        </section>
+      </div>
+    </section>
+  );
 }
 
 function SettingsPage({ onToast }) {
@@ -561,7 +648,7 @@ export function WorkspacePage({ pageKey, projectId, onNavigate, onToast, onOpenD
   const props = { onNavigate, onToast, onOpenDiagnosis };
   const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage };
   const Page = pages[pageKey] ?? AnalysisPage;
-  if (pageKey === "review" || pageKey === "resources") {
+  if (pageKey === "review" || pageKey === "resources" || pageKey === "learning") {
     return <Page {...props} projectId={projectId} />;
   }
   return <Page {...props} />;
