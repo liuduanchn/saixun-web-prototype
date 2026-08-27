@@ -10,3 +10,6 @@ dist/
 
 .DS_Store
 Thumbs.db
+
+# 前端构建校验输出（vite build --outDir dist-check）
+dist-check/

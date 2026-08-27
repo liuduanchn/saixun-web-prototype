@@ -644,6 +644,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
   const [teamName, setTeamName] = useState(tenant?.name || "");
   const [newMember, setNewMember] = useState("");
   const [newRole, setNewRole] = useState("MEMBER");
+  const [newTeam, setNewTeam] = useState("");
   const [pwd, setPwd] = useState({ old: "", next: "", confirm: "" });
   const [preferences, setPreferences] = useState({ task: true, review: true, risk: true });
   const toggle = (key) => setPreferences((current) => ({...current, [key]: !current[key]}));
@@ -718,6 +719,26 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
     }
   };
 
+  // 创建新团队（当前用户成为 OWNER 并自动切换为活跃团队）
+  const createTeam = async () => {
+    if (!newTeam.trim()) return;
+    if (DEMO_MODE) { onToast("演示模式：未连接后端"); return; }
+    try {
+      const res = await api.tenants.create(newTeam.trim());
+      const newId = res?.user?.tenantId;
+      if (newId && onSwitchTenant) {
+        await onSwitchTenant(newId, { stay: true });
+      }
+      const list = await api.tenants.mine();
+      setMyTeams(Array.isArray(list) ? list : []);
+      await refreshTeam();
+      setNewTeam("");
+      onToast("团队已创建，并切换为当前团队");
+    } catch (err) {
+      onToast(err?.message || "创建失败");
+    }
+  };
+
   // 在设置中心内切换当前账号所属团队
   const handleSwitch = async (tenantId) => {
     if (DEMO_MODE) { onToast("演示模式：未连接后端，无法切换团队"); return; }
@@ -770,6 +791,9 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
           </div>
         ))}
       </div>
+      <h3>创建新团队</h3>
+      <label className="field-row"><span>新团队名称</span><div className="inline-field add-member-field"><input value={newTeam} onChange={(event) => setNewTeam(event.target.value)} placeholder="输入新团队名称" aria-label="新团队名称" /><button className="page-primary" onClick={createTeam}>创建</button></div></label>
+      <p className="muted small">创建后你作为负责人（OWNER）加入，并自动切换为当前团队。成员可用"添加成员"通过已注册用户名加入。</p>
       <label className="field-row"><span>团队名称</span><div className="inline-field"><input value={teamName} onChange={(event) => setTeamName(event.target.value)} aria-label="团队名称" /><button className="page-primary" onClick={saveTeamName}>保存</button></div></label>
       <h3>团队成员（{members.length}）</h3>
       <div className="member-list">{members.map((m) => {

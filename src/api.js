@@ -110,6 +110,12 @@ export const api = {
     mine() {
       return request("/tenants/mine");
     },
+    create(name) {
+      return request("/tenants", {
+        method: "POST",
+        body: { name },
+      });
+    },
     switch(tenantId) {
       return request("/tenants/switch", {
         method: "POST",

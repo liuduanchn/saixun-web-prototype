@@ -8,6 +8,7 @@ import { BadRequestException } from '@nestjs/common';
 
 const SwitchSchema = z.object({ tenantId: z.string().min(1) });
 const RenameSchema = z.object({ name: z.string().min(1) });
+const CreateSchema = z.object({ name: z.string().min(1) });
 const AddMemberSchema = z.object({
   username: z.string().min(1),
   role: z.enum(['OWNER', 'TEACHER', 'STUDENT', 'MEMBER']).optional(),
@@ -21,6 +22,13 @@ export class TenantsController {
   @Get('mine')
   mine(@CurrentUser() user: JwtPayload) {
     return this.tenants.mine(user);
+  }
+
+  @Post()
+  create(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    const dto = CreateSchema.safeParse(body);
+    if (!dto.success) throw new BadRequestException('团队名称不能为空');
+    return this.tenants.create(dto.data.name, user);
   }
 
   @Post('switch')

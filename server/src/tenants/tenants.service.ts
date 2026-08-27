@@ -58,6 +58,18 @@ export class TenantsService {
     return { id: tenant.id, name: tenant.name };
   }
 
+  /** 创建新团队：当前用户成为 OWNER 并自动切换为活跃团队 */
+  async create(name: string, user: JwtPayload) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) throw new BadRequestException('团队名称不能为空');
+    if (trimmed.length > 40) throw new BadRequestException('团队名称过长');
+    const tenant = await this.users.createTenant(trimmed);
+    await this.users.ensureMembership(user.sub, tenant.id, 'OWNER');
+    const updated = await this.users.setActiveTenant(user.sub, tenant.id);
+    const { passwordHash, ...safe } = updated;
+    return this.auth.login(safe as any);
+  }
+
   /** 当前活跃团队成员列表 */
   async members(user: JwtPayload) {
     return this.users.listTenantMembers(user.tenantId);
