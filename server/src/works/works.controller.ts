@@ -36,6 +36,11 @@ export class WorksController {
     return this.works.findAll(projectId, user);
   }
 
+  @Get('mine')
+  findMine(@CurrentUser() user: JwtPayload) {
+    return this.works.findMine(user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     return this.works.findOne(id, user);

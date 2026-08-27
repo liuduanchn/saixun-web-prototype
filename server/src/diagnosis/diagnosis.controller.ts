@@ -33,6 +33,11 @@ export class DiagnosisController {
   }
 
   /** 教师复核：确认/驳回，确认高严重度缺口会自动生成修改任务 */
+  @Get('mine')
+  findMine(@CurrentUser() user: JwtPayload) {
+    return this.diagnosis.findMine(user);
+  }
+
   @Patch(':id')
   review(
     @Param('id') id: string,

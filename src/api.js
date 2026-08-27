@@ -167,6 +167,9 @@ export const api = {
     list(projectId) {
       return request(`/works?projectId=${encodeURIComponent(projectId)}`);
     },
+    mine() {
+      return request(`/works/mine`);
+    },
     upload(projectId, file) {
       const form = new FormData();
       form.append("file", file);
@@ -189,6 +192,9 @@ export const api = {
     },
     list(workVersionId) {
       return request(`/diagnosis?workVersionId=${encodeURIComponent(workVersionId)}`);
+    },
+    mine() {
+      return request(`/diagnosis/mine`);
     },
     review(id, status) {
       return request(`/diagnosis/${id}`, { method: "PATCH", body: { status } });

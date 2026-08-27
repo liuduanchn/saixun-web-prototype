@@ -28,6 +28,11 @@ const navItems = [
   { label: "资源知识库", icon: Package }, { label: "学习记录", icon: Student },
   { label: "设置中心", icon: GearSix },
 ];
+const studentNavItems = [
+  { label: "我的任务", icon: Student }, { label: "我的作品", icon: PaperPlaneTilt },
+  { label: "诊断反馈", icon: MagnifyingGlass }, { label: "模拟答辩", icon: MonitorPlay },
+  { label: "设置中心", icon: GearSix },
+];
 
 const initialTasks = [
   { id: 1, title: "补充应用成效对比数据", priority: "高优先级", owner: "李同学", due: "8-25 截止", done: false },
@@ -70,7 +75,7 @@ export function App() {
   const profileAreaRef = useRef(null);
   const notificationAreaRef = useRef(null);
   const [user, setUser] = useState(() => loadSession(window.localStorage));
-  const [activeNav, setActiveNav] = useState("竞赛项目驾驶舱");
+  const [activeNav, setActiveNav] = useState(user?.role === "STUDENT" ? "我的任务" : "竞赛项目驾驶舱");
   const [tasks, setTasks] = useState(DEMO_MODE ? initialTasks : []);
   const [coverage, setCoverage] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -248,7 +253,7 @@ export function App() {
       setSelectedProjectId("");
       if (!stay) {
         // 顶栏下拉切换时回到驾驶舱；设置中心内切换则停留在当前页面
-        setActiveNav("竞赛项目驾驶舱");
+        setActiveNav(result.user?.role === "STUDENT" ? "我的任务" : "竞赛项目驾驶舱");
       }
       showToast(`已切换到团队：${target?.name ?? "新团队"}`);
     } catch (err) {
@@ -280,7 +285,7 @@ export function App() {
           <AppIconButton label={sidebarPresentation.toggleLabel} title={sidebarPresentation.toggleLabel} aria-pressed={sidebarPresentation.togglePressed} onClick={toggleSidebar}><ListChecks size={22} /></AppIconButton>
         </div>
         <nav className="nav-list">
-          {navItems.map(({ label, icon: Icon }, index) => (
+          {(user?.role === 'STUDENT' ? studentNavItems : navItems).map(({ label, icon: Icon }, index) => (
             <button key={label} aria-label={label} title={sidebarCollapsed ? label : undefined} aria-current={activeNav === label ? "page" : undefined} className={`nav-item ${activeNav === label ? "active" : ""} ${index === 6 ? "nav-divider" : ""}`} onClick={() => handleNav(label)}>
               <Icon size={22} weight={activeNav === label ? "fill" : "regular"} /><span>{label}</span>
             </button>

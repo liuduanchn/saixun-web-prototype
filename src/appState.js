@@ -12,6 +12,10 @@ const pageKeys = Object.freeze({
   "资源知识库": "resources",
   "学习记录": "learning",
   "设置中心": "settings",
+  "我的任务": "student-tasks",
+  "我的作品": "student-works",
+  "诊断反馈": "student-diagnosis",
+  "模拟答辩": "student-defense",
 });
 
 /** 读取已保存的会话用户（token 由 api.js 单独管理） */

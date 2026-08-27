@@ -62,6 +62,18 @@ export class WorksService {
     });
   }
 
+  /** 学生的「我的作品」：仅返回当前用户本人上传、且属于当前租户的作品版本 */
+  async findMine(user: JwtPayload) {
+    return this.prisma.workVersion.findMany({
+      where: { uploaderId: user.sub, project: { tenantId: user.tenantId } },
+      include: {
+        project: { select: { id: true, name: true } },
+        uploader: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async findOne(id: string, user: JwtPayload) {
     const wv = await this.prisma.workVersion.findUnique({
       where: { id },

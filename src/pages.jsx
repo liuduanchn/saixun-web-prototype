@@ -6,6 +6,7 @@ import {
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
   Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X,
 } from "@phosphor-icons/react";
+import { StudentTasksPage, StudentWorksPage, StudentDiagnosisPage, StudentDefensePage } from "./studentPages.jsx";
 import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
 import { normalizeTask, buildColumns } from "./taskModel.js";
 
@@ -828,7 +829,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
 
 export function WorkspacePage({ pageKey, projectId, user, activeTenantId, onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant }) {
   const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant };
-  const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage };
+  const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage, 'student-tasks': StudentTasksPage, 'student-works': StudentWorksPage, 'student-diagnosis': StudentDiagnosisPage, 'student-defense': StudentDefensePage };
   const Page = pages[pageKey] ?? AnalysisPage;
   if (pageKey === "review" || pageKey === "resources" || pageKey === "learning") {
     return <Page {...props} projectId={projectId} />;

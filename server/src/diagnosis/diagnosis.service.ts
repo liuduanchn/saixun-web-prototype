@@ -184,6 +184,21 @@ export class DiagnosisService {
     return [];
   }
 
+  /** 学生的「诊断反馈」：返回该学生本人上传作品版本的全部诊断记录 */
+  async findMine(user: JwtPayload) {
+    const workVersions = await this.prisma.workVersion.findMany({
+      where: { uploaderId: user.sub, project: { tenantId: user.tenantId } },
+      select: { id: true },
+    });
+    const ids = workVersions.map((w) => w.id);
+    if (ids.length === 0) return [];
+    return this.prisma.diagnosis.findMany({
+      where: { workVersionId: { in: ids } },
+      include: { scorePoint: { include: { criterion: true } }, workVersion: { select: { id: true, version: true, project: { select: { id: true, name: true } } } } },
+      orderBy: { matchScore: 'asc' },
+    });
+  }
+
   async findByWorkVersion(workVersionId: string, user: JwtPayload) {
     await this.assertWorkTenant(workVersionId, user.tenantId);
     return this.prisma.diagnosis.findMany({
