@@ -14,6 +14,8 @@ const mockPrisma = {
   },
   scorePoint: { findMany: jest.fn() },
   task: { create: jest.fn() },
+  notification: { create: jest.fn() },
+  learningEvent: { create: jest.fn() },
 };
 
 describe('DiagnosisService', () => {
@@ -22,7 +24,13 @@ describe('DiagnosisService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    svc = new DiagnosisService(mockPrisma as any, {} as any, {} as any);
+    svc = new DiagnosisService(
+      mockPrisma as any,
+      {} as any,
+      {} as any,
+      { notify: jest.fn() } as any,
+      { track: jest.fn() } as any,
+    );
   });
 
   it('findMine: 严格按 uploaderId + 项目租户过滤', async () => {

@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { TenantGuard } from './guards/tenant.guard';
 
 @Module({
   imports: [
@@ -30,6 +31,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     JwtStrategy,
     // 全局 JWT 守卫：除标注 @Public() 的路由外都需合法 token
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // 全局租户守卫：校验请求具备租户上下文，集中式多租户隔离兜底
+    { provide: APP_GUARD, useClass: TenantGuard },
   ],
   exports: [AuthService, JwtModule],
 })

@@ -101,4 +101,15 @@ export class LearningService {
     ];
     return { abilities, totalEvents };
   }
+
+  /** 学习埋点：在教学动作发生时记录一条 LearningEvent（替代纯 seed 数据） */
+  async track(input: { userId: string; type: string; payload?: Record<string, unknown> }) {
+    return this.prisma.learningEvent.create({
+      data: {
+        userId: input.userId,
+        type: input.type,
+        payload: (input.payload ?? {}) as object,
+      },
+    });
+  }
 }

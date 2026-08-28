@@ -43,10 +43,10 @@ describe('AuthService', () => {
       tenantId: 't',
       activeTenantId: 't',
       passwordHash: 'h',
-    });
+    } as any);
     compare.mockResolvedValue(true as any);
     const r = await svc.validateUser('x', 'pwd');
-    expect(r.passwordHash).toBeUndefined();
+    expect((r as any).passwordHash).toBeUndefined();
     expect(r.id).toBe('1');
   });
 

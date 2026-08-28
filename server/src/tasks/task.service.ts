@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTaskDto, UpdateTaskDto } from './dto/task.dto';
 
 @Injectable()
 export class TaskService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /** 校验 project 归属当前租户，返回 project 或抛错 */
   private async assertProjectTenant(projectId: string, tenantId: string) {
@@ -24,7 +28,7 @@ export class TaskService {
 
   async create(dto: CreateTaskDto, user: JwtPayload) {
     await this.assertProjectTenant(dto.projectId, user.tenantId);
-    return this.prisma.task.create({
+    const created = await this.prisma.task.create({
       data: {
         projectId: dto.projectId,
         title: dto.title,
@@ -38,6 +42,19 @@ export class TaskService {
       },
       include: { scorePoints: true, owner: { select: { id: true, name: true } } },
     });
+
+    // 事件驱动：若任务指定了负责人，通知其有新任务
+    if (dto.ownerId) {
+      await this.notifications.notify({
+        userId: dto.ownerId,
+        category: 'task',
+        title: '你有一条新任务',
+        detail: dto.title,
+        targetNav: '竞赛项目驾驶舱',
+      });
+    }
+
+    return created;
   }
 
   async findAll(projectId: string, user: JwtPayload) {

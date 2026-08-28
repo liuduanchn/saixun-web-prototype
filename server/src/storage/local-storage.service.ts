@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { mkdir, writeFile, unlink, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { StorageProvider, UploadInput, StoredObject } from './storage.interface';
 
 /**
@@ -24,9 +24,11 @@ export class LocalStorageService implements StorageProvider {
   }
 
   async upload(input: UploadInput): Promise<StoredObject> {
-    await mkdir(this.root, { recursive: true });
-    const key = this.keyOf(input.buffer, input.filename);
+    // 租户隔离：key 以 tenantId 作为一级目录前缀
+    const key = `${input.tenantId}/${this.keyOf(input.buffer, input.filename)}`;
     const full = join(this.root, key);
+    // 需连同租户子目录一并创建，否则首次上传会因目录不存在而 ENOENT
+    await mkdir(dirname(full), { recursive: true });
     try {
       await writeFile(full, input.buffer);
     } catch (e) {

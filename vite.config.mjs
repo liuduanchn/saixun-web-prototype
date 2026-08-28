@@ -13,10 +13,11 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     allowedHosts: ["terminal.local"],
-    // 本地开发时把 /api 代理到 NestJS 后端（:9000，避开被占用的 3001 与系统保留段），避免跨域并复用相对路径
+    // 本地开发时把 /api 代理到 NestJS 后端（默认 :8080，可用 VITE_PROXY_TARGET 覆盖），
+    // 避免跨域并复用相对路径。注意：端口须避开 Windows 动态保留段（如 8950-9049 含旧用的 9000）
     proxy: {
       "/api": {
-        target: "http://localhost:9000",
+        target: process.env.VITE_PROXY_TARGET || "http://localhost:8080",
         changeOrigin: true,
       },
     },

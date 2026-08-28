@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface';
 import { AI_PROVIDER, AiProvider, ChatMessage } from '../ai/ai.interface';
 import { JwtPayload } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { LearningService } from '../learning/learning.service';
 import { Severity, DiagnosisStatus } from '@prisma/client';
 
 interface Finding {
@@ -26,6 +28,8 @@ export class DiagnosisService {
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(AI_PROVIDER) private readonly ai: AiProvider,
+    private readonly notifications: NotificationsService,
+    private readonly learning: LearningService,
   ) {}
 
   private async assertWorkTenant(workVersionId: string, tenantId: string) {
@@ -95,6 +99,13 @@ export class DiagnosisService {
         }),
       );
     }
+    // 事件驱动：为学生（诊断发起者）记录学习埋点
+    await this.learning.track({
+      userId: user.sub,
+      type: 'DIAGNOSIS_RUN',
+      payload: { findings: created.length, version: wv.version },
+    });
+
     return created;
   }
 
@@ -238,6 +249,19 @@ export class DiagnosisService {
         include: { scorePoints: true },
       });
     }
+
+    // 事件驱动：通知作品上传者本次诊断复核结果（确认/驳回）
+    if (diag.workVersion.uploaderId) {
+      const verb = status === 'CONFIRMED' ? '确认' : status === 'REJECTED' ? '驳回' : '更新';
+      await this.notifications.notify({
+        userId: diag.workVersion.uploaderId,
+        category: 'diagnosis',
+        title: `作品诊断已${verb}`,
+        detail: `评分点「${diag.scorePoint.name}」教师已${verb}`,
+        targetNav: '我的作品',
+      });
+    }
+
     return { diagnosis: updated, createdTask };
   }
 }

@@ -48,4 +48,24 @@ export class NotificationsService {
     });
     return { ok: true };
   }
+
+  /** 业务动作触发的通知写入（事件驱动，替代纯 seed 数据） */
+  async notify(input: {
+    userId: string;
+    category: string;
+    title: string;
+    detail?: string | null;
+    targetNav?: string | null;
+  }) {
+    return this.prisma.notification.create({
+      data: {
+        userId: input.userId,
+        category: input.category,
+        title: input.title,
+        detail: input.detail ?? null,
+        targetNav: input.targetNav ?? null,
+        read: false,
+      },
+    });
+  }
 }

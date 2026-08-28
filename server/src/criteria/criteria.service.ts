@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AI_PROVIDER, AiProvider, ChatMessage } from '../ai/ai.interface';
 import { JwtPayload } from '../auth/auth.service';
+import { LearningService } from '../learning/learning.service';
 import { extractJson } from '../common/llm.util';
 
 export interface ScorePointDraft {
@@ -25,6 +26,7 @@ export class CriteriaService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(AI_PROVIDER) private readonly ai: AiProvider,
+    private readonly learning: LearningService,
   ) {}
 
   private async assertProjectTenant(projectId: string, tenantId: string) {
@@ -140,6 +142,15 @@ export class CriteriaService {
       });
       created.push(criterion);
     }
+
+    // 事件驱动：为赛项解析确认者记录学习埋点
+    const points = created.reduce((n, c) => n + c.scorePoints.length, 0);
+    await this.learning.track({
+      userId: user.sub,
+      type: 'CRITERIA_PARSED',
+      payload: { points },
+    });
+
     return created;
   }
 

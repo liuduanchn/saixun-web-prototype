@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AI_PROVIDER, AiProvider, ChatMessage } from '../ai/ai.interface';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface';
 import { JwtPayload } from '../auth/auth.service';
+import { LearningService } from '../learning/learning.service';
 import { extractJson } from '../common/llm.util';
 
 interface TranscriptEntry {
@@ -35,6 +36,7 @@ export class DefenseService {
     private readonly prisma: PrismaService,
     @Inject(AI_PROVIDER) private readonly ai: AiProvider,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly learning: LearningService,
   ) {}
 
   private async assertProjectTenant(projectId: string, tenantId: string) {
@@ -92,6 +94,14 @@ export class DefenseService {
     const session = await this.prisma.defenseSession.create({
       data: { projectId, round: 1, transcript: transcript as any, evaluations: evaluations as any },
     });
+
+    // 事件驱动：为答辩发起者记录学习埋点
+    await this.learning.track({
+      userId: user.sub,
+      type: 'DEFENSE_RUN',
+      payload: { rounds },
+    });
+
     return session;
   }
 

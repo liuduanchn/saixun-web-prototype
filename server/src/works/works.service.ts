@@ -8,12 +8,16 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface';
 import { JwtPayload } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { LearningService } from '../learning/learning.service';
 
 @Injectable()
 export class WorksService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly notifications: NotificationsService,
+    private readonly learning: LearningService,
   ) {}
 
   private async assertProjectTenant(projectId: string, tenantId: string) {
@@ -29,7 +33,7 @@ export class WorksService {
     projectId: string,
     user: JwtPayload,
   ) {
-    await this.assertProjectTenant(projectId, user.tenantId);
+    const project = await this.assertProjectTenant(projectId, user.tenantId);
     if (!file || !file.buffer || file.buffer.length === 0)
       throw new BadRequestException('未接收到文件或文件为空');
 
@@ -38,6 +42,7 @@ export class WorksService {
       filename: file.originalname,
       contentType: file.mimetype,
       size: file.size,
+      tenantId: user.tenantId,
     });
 
     const last = await this.prisma.workVersion.findFirst({
@@ -47,10 +52,32 @@ export class WorksService {
     });
     const version = (last?.version ?? 0) + 1;
 
-    return this.prisma.workVersion.create({
+    const wv = await this.prisma.workVersion.create({
       data: { projectId, uploaderId: user.sub, fileRef: stored.key, version },
       include: { uploader: { select: { id: true, name: true } } },
     });
+
+    // 事件驱动：通知本租户教师有新作品；为学生记录学习埋点
+    const teachers = await this.prisma.user.findMany({
+      where: { tenantId: user.tenantId, role: 'TEACHER' },
+      select: { id: true },
+    });
+    for (const t of teachers) {
+      await this.notifications.notify({
+        userId: t.id,
+        category: 'work',
+        title: `${user.name} 上传了新作品`,
+        detail: `${project.name} · 版本 V${version}`,
+        targetNav: '竞赛项目驾驶舱',
+      });
+    }
+    await this.learning.track({
+      userId: user.sub,
+      type: 'WORK_UPLOADED',
+      payload: { version, title: project.name },
+    });
+
+    return wv;
   }
 
   async findAll(projectId: string, user: JwtPayload) {

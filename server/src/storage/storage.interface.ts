@@ -10,6 +10,8 @@ export interface UploadInput {
   filename: string;
   contentType: string;
   size: number;
+  /** 租户 ID：文件按 tenantId 分目录隔离，杜绝跨租户访问 */
+  tenantId: string;
 }
 
 export interface StoredObject {

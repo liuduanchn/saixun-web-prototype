@@ -12,6 +12,7 @@ const mockPrisma = {
     count: jest.fn(),
   },
   scorePoint: { count: jest.fn() },
+  notification: { create: jest.fn() },
   $transaction: jest.fn(),
 };
 
@@ -21,7 +22,7 @@ describe('TaskService (多租户隔离)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    svc = new TaskService(mockPrisma as any);
+    svc = new TaskService(mockPrisma as any, { notify: jest.fn() } as any);
   });
 
   it('create: 项目归属其他租户应抛 ForbiddenException', async () => {

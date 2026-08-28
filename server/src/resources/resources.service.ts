@@ -69,6 +69,7 @@ export class ResourcesService {
         filename: file.originalname,
         contentType: file.mimetype,
         size: file.size,
+        tenantId: user.tenantId,
       });
       fileRef = stored.key;
     }
