@@ -1,6 +1,8 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Severity, ResourceType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
 
 const prisma = new PrismaClient();
 
@@ -55,6 +57,296 @@ async function seedProjectWithCriteria(
     }
   }
   return project;
+}
+
+// 以下为「全功能模块演示数据补齐」辅助函数，用于在既有赛项/团队上生成
+// 作品版本、诊断记录、模拟答辩、资源、案例库、学生学习记录与通知，
+// 保证每个侧边栏模块均有数据。
+function diagnosisTemplate(pointName: string): {
+  matchScore: number;
+  severity: Severity;
+  issues: string;
+  suggestions: string;
+} {
+  if (pointName.includes('需求') || pointName.includes('功能覆盖')) {
+    return {
+      matchScore: 72,
+      severity: 'MEDIUM',
+      issues: '需求描述偏概括，缺少具体场景映射与优先级说明。',
+      suggestions: '补充用例清单，将每项功能与评分点逐一对照。',
+    };
+  }
+  if (pointName.includes('核心功能') || pointName.includes('实现规范')) {
+    return {
+      matchScore: 68,
+      severity: 'MEDIUM',
+      issues: '核心功能已实现，但边界条件与异常处理说明不足。',
+      suggestions: '增加单元测试与关键路径说明，突出功能稳定性。',
+    };
+  }
+  if (pointName.includes('架构') || pointName.includes('先进性')) {
+    return {
+      matchScore: 62,
+      severity: 'HIGH',
+      issues: '架构说明较抽象，模块职责划分与数据流不够清晰。',
+      suggestions: '绘制分层架构图，说明各模块接口与演进路径。',
+    };
+  }
+  if (pointName.includes('技术选型') || pointName.includes('应用正确性')) {
+    return {
+      matchScore: 75,
+      severity: 'LOW',
+      issues: '技术路线基本可行，但选型理由与替代方案对比不足。',
+      suggestions: '补充选型对比表，突出技术适配性。',
+    };
+  }
+  if (pointName.includes('创新') || pointName.includes('亮点')) {
+    return {
+      matchScore: 78,
+      severity: 'LOW',
+      issues: '创新点已提出，但缺少与常规方案的量化对比。',
+      suggestions: '加入对比实验或应用成效数据，强化说服力。',
+    };
+  }
+  if (pointName.includes('文档') || pointName.includes('规范')) {
+    return {
+      matchScore: 58,
+      severity: 'HIGH',
+      issues: '文档结构欠规范，关键结论缺少加粗与图表佐证。',
+      suggestions: '使用统一模板，关键结论加粗并插入配图/表格。',
+    };
+  }
+  if (pointName.includes('展示') || pointName.includes('答辩') || pointName.includes('表达')) {
+    return {
+      matchScore: 70,
+      severity: 'MEDIUM',
+      issues: '展示逻辑基本清晰，但时间分配与重点突出可优化。',
+      suggestions: '精简背景铺垫，突出作品价值与佐证数据。',
+    };
+  }
+  if (pointName.includes('性能') || pointName.includes('应用效果') || pointName.includes('效益')) {
+    return {
+      matchScore: 66,
+      severity: 'MEDIUM',
+      issues: '应用成效描述较笼统，缺少可量化指标。',
+      suggestions: '补充测试样本、响应时延、并发结果等数据。',
+    };
+  }
+  return {
+    matchScore: 65,
+    severity: 'MEDIUM',
+    issues: '该评分点支撑材料不足，需进一步补充说明。',
+    suggestions: `围绕「${pointName}」补充具体实现、佐证与总结。`,
+  };
+}
+
+/** 为某赛项创建演示作品版本（含落盘文件，保证可下载/诊断可读取） */
+async function seedWorkVersion(
+  projectId: string,
+  tenantId: string,
+  uploaderId: string,
+  fileName: string,
+) {
+  const existing = await prisma.workVersion.findFirst({
+    where: { projectId },
+    orderBy: { version: 'asc' },
+  });
+  if (existing) return existing;
+
+  const fileRef = `${tenantId}/${fileName}`;
+  // npm run prisma:seed 的 cwd 为 server/；若在其他目录运行请调整 uploads 路径
+  const dir = join(process.cwd(), 'uploads', tenantId);
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, fileName),
+    `# 作品说明 V1\n\n本作品为「${projectId}」赛项的演示参赛作品，用于展示赛训智舱各功能模块闭环。\n包含赛项理解、方案设计、原型实现、作品打磨与模拟答辩等阶段。\n`,
+    'utf8',
+  );
+
+  return prisma.workVersion.create({
+    data: { projectId, uploaderId, fileRef, version: 1 },
+  });
+}
+
+/** 为某作品版本按评分点生成诊断记录（若已存在则跳过） */
+async function seedDiagnoses(workVersionId: string) {
+  const exists = await prisma.diagnosis.count({ where: { workVersionId } });
+  if (exists > 0) return;
+  const points = await prisma.scorePoint.findMany({
+    where: { criterion: { project: { works: { some: { id: workVersionId } } } } },
+  });
+  for (const p of points) {
+    const tpl = diagnosisTemplate(p.name);
+    await prisma.diagnosis.create({
+      data: {
+        workVersionId,
+        scorePointId: p.id,
+        matchScore: tpl.matchScore,
+        severity: tpl.severity,
+        issues: tpl.issues,
+        suggestions: tpl.suggestions,
+        status: 'PENDING',
+      },
+    });
+  }
+}
+
+/** 为某赛项创建一场已完成的模拟答辩会话（若已存在则跳过） */
+async function seedDefenseSession(projectId: string) {
+  const exists = await prisma.defenseSession.count({ where: { projectId } });
+  if (exists > 0) return;
+  const transcript = [
+    {
+      round: 1,
+      role: 'judge',
+      content: '请简要说明你的作品是如何理解并落实赛项需求的？',
+    },
+    {
+      round: 1,
+      role: 'student',
+      content: '我们先用思维导图拆解题规，将每个评分点映射为可验证的功能清单，再按清单逐一实现并自测。',
+      evaluation: { logic: 82, evidence: 76, accuracy: 80, comment: '需求理解到位，但可补充更多量化场景。' },
+    },
+    {
+      round: 2,
+      role: 'judge',
+      content: '作品中核心技术实现的关键难点是什么，你是如何解决的？',
+    },
+    {
+      round: 2,
+      role: 'student',
+      content: '难点在于多租户隔离与文件权限校验，我们通过租户前缀与路径解析做了严格隔离，并补充了单元测试。',
+      evaluation: { logic: 85, evidence: 78, accuracy: 83, comment: '技术方案清晰，建议补充性能压测数据。' },
+    },
+    {
+      round: 3,
+      role: 'judge',
+      content: '如果继续打磨，你最想改进哪一部分，为什么？',
+    },
+    {
+      round: 3,
+      role: 'student',
+      content: '想进一步强化应用成效证据链，补充真实运行截图、响应时延与并发测试结果。',
+      evaluation: { logic: 80, evidence: 72, accuracy: 81, comment: '改进方向明确，证据意识有提升空间。' },
+    },
+  ];
+  const evaluations = {
+    maxRounds: 3,
+    rounds: [
+      { round: 1, scores: { logic: 82, evidence: 76, accuracy: 80 }, comment: '需求理解到位，但可补充更多量化场景。' },
+      { round: 2, scores: { logic: 85, evidence: 78, accuracy: 83 }, comment: '技术方案清晰，建议补充性能压测数据。' },
+      { round: 3, scores: { logic: 80, evidence: 72, accuracy: 81 }, comment: '改进方向明确，证据意识有提升空间。' },
+    ],
+    overall: '整体表现良好，需求理解与技术方案较清晰；建议在应用成效证据链、边界条件说明与技术细节上继续打磨。',
+    done: true,
+  };
+  await prisma.defenseSession.create({
+    data: {
+      projectId,
+      round: 3,
+      transcript: transcript as any,
+      evaluations: evaluations as any,
+    },
+  });
+}
+
+/** 为某赛项创建演示资源（模板/案例/材料各 1 条；已 ≥3 条则跳过） */
+async function seedResources(projectId: string, projectName: string) {
+  const count = await prisma.resource.count({ where: { projectId } });
+  if (count >= 3) return;
+  const templates: Array<{ type: ResourceType; name: string; description: string }> = [
+    {
+      type: 'TEMPLATE',
+      name: `${projectName}规程解读模板`,
+      description: `用于快速拆解${projectName}评分标准，逐项映射训练任务与作品版本。`,
+    },
+    {
+      type: 'CASE',
+      name: `${projectName}优秀作品案例`,
+      description: '历届获奖作品的亮点梳理，供本次备赛参考。',
+    },
+    {
+      type: 'MATERIAL',
+      name: `${projectName}技术参考资料`,
+      description: '赛项涉及的关键技术文档、工具链与最佳实践。',
+    },
+  ];
+  for (const t of templates) {
+    await prisma.resource.create({
+      data: { projectId, type: t.type, name: t.name, description: t.description },
+    });
+  }
+}
+
+/** 幂等批量写入案例沉淀库 */
+async function seedCaseLibrary(
+  tenantId: string,
+  projectId: string,
+  cases: Array<{ title: string; content: string; category: string; tags: string[] }>,
+) {
+  const count = await prisma.caseLibrary.count({ where: { tenantId } });
+  if (count >= cases.length) return;
+  for (const c of cases) {
+    await prisma.caseLibrary.create({ data: { tenantId, projectId, title: c.title, content: c.content, category: c.category, tags: c.tags } });
+  }
+}
+
+/** 为每位学生补齐学习记录，让「学习记录」模块对教师、学生均有内容 */
+async function seedStudentEvents(studentId: string, projectName: string, isUploader: boolean) {
+  const exists = await prisma.learningEvent.count({ where: { userId: studentId } });
+  if (exists > 0) return;
+  const base = Date.now();
+  const day = 86400000;
+  const events: Array<{ type: string; payload: Record<string, unknown>; ago: number }> = [
+    { type: 'CRITERIA_PARSED', payload: { title: `赛项解析：${projectName}评分标准`, points: 15 }, ago: 14 },
+    { type: 'TASK_CREATED', payload: { title: `${projectName}训练任务`, status: 'IN_PROGRESS' }, ago: 10 },
+  ];
+  if (isUploader) {
+    events.push(
+      { type: 'WORK_UPLOADED', payload: { title: `${projectName}作品 V1`, version: 1 }, ago: 7 },
+      { type: 'DIAGNOSIS_RUN', payload: { title: `作品诊断：${projectName} V1`, findings: 15 }, ago: 6 },
+      { type: 'DEFENSE_RUN', payload: { title: '模拟答辩第 1 轮', rounds: 3 }, ago: 3 },
+    );
+  }
+  for (const e of events) {
+    await prisma.learningEvent.create({
+      data: { userId: studentId, type: e.type, payload: e.payload as any, createdAt: new Date(base - e.ago * day) },
+    });
+  }
+}
+
+/** 为每位学生补齐通知，让「通知」模块对学生不空 */
+async function seedStudentNotifications(studentId: string, projectName: string, isUploader: boolean) {
+  const exists = await prisma.notification.count({ where: { userId: studentId } });
+  if (exists > 0) return;
+  const data: Array<{
+    userId: string;
+    category: string;
+    title: string;
+    detail: string;
+    targetNav: string;
+    read: boolean;
+  }> = [
+    {
+      userId: studentId,
+      category: '训练任务',
+      title: '新训练任务已分配',
+      detail: `「${projectName}」训练任务已创建，请及时跟进。`,
+      targetNav: '训练任务中心',
+      read: false,
+    },
+  ];
+  if (isUploader) {
+    data.push({
+      userId: studentId,
+      category: '作品诊断',
+      title: '作品 V1 诊断完成',
+      detail: `「${projectName}」作品 V1 诊断已完成，请查看反馈。`,
+      targetNav: '作品诊断中心',
+      read: false,
+    });
+  }
+  await prisma.notification.createMany({ data });
 }
 
 async function main() {
@@ -690,8 +982,142 @@ async function main() {
     });
   }
 
+  // 9. 全功能模块演示数据补齐：让侧边栏每一个模块都有真实可展示的数据
+  //    覆盖：作品诊断中心、模拟答辩室、赛后复盘、资源知识库、案例沉淀库、学习记录、通知。
+
+  // 9.1 修复：智能机器人赛项原有任务但缺少评分标准，导致无法诊断
+  const robotCriteriaCount = await prisma.criterion.count({ where: { projectId: project2.id } });
+  if (robotCriteriaCount === 0) {
+    const robotCriteria = genericCriteria('机器人控制技术应用正确性');
+    for (const c of robotCriteria) {
+      const criterion = await prisma.criterion.create({
+        data: { projectId: project2.id, name: c.name, weight: c.weight },
+      });
+      for (const p of c.points) {
+        await prisma.scorePoint.create({
+          data: { criterionId: criterion.id, name: p, abilityTags: [p] },
+        });
+      }
+    }
+    // 将已有任务与评分点关联，提升赛后复盘覆盖率
+    const robotPoints = await prisma.scorePoint.findMany({ where: { criterion: { projectId: project2.id } } });
+    const byNameRobot = (n: string) => robotPoints.find((p) => p.name === n)?.id;
+    const robotTaskLinks: Array<{ title: string; pointNames: string[] }> = [
+      { title: '机器人机械结构设计', pointNames: ['核心功能实现规范性'] },
+      { title: '视觉识别算法开发', pointNames: ['技术选型合理性'] },
+      { title: '运动控制联调', pointNames: ['架构设计先进性'] },
+    ];
+    for (const link of robotTaskLinks) {
+      const ids = link.pointNames.map(byNameRobot).filter(Boolean) as string[];
+      const task = await prisma.task.findFirst({ where: { projectId: project2.id, title: link.title } });
+      if (task && ids.length) {
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { scorePoints: { connect: ids.map((id) => ({ id })) } },
+        });
+      }
+    }
+  }
+
+  // 9.2 每个赛项均生成：作品版本 + 诊断记录 + 模拟答辩 + 资源
+  const softwareTestProject = await prisma.project.findUniqueOrThrow({ where: { id: 'software-test-project' } });
+  const bigdataProject = await prisma.project.findUniqueOrThrow({ where: { id: 'bigdata-project' } });
+  const projectDemos: Array<{
+    project: typeof project;
+    tenantId: string;
+    uploaderId: string;
+    file: string;
+  }> = [
+    { project, tenantId: tenant.id, uploaderId: student1.id, file: 'seed-work-v1.md' },
+    { project: project2, tenantId: tenant2.id, uploaderId: student2.id, file: 'seed-robot-work-v1.md' },
+    { project: project3, tenantId: tenant2.id, uploaderId: student5.id, file: 'seed-vehicle-work-v1.md' },
+    { project: softwareTestProject, tenantId: infoTenant.id, uploaderId: student7.id, file: 'seed-softest-work-v1.md' },
+    { project: bigdataProject, tenantId: infoTenant.id, uploaderId: student8.id, file: 'seed-bigdata-work-v1.md' },
+  ];
+  for (const d of projectDemos) {
+    const wv = await seedWorkVersion(d.project.id, d.tenantId, d.uploaderId, d.file);
+    await seedDiagnoses(wv.id);
+    await seedDefenseSession(d.project.id);
+    await seedResources(d.project.id, d.project.name);
+  }
+
+  // 9.3 案例沉淀库：为 innovation-tenant / info-tenant 补齐，三团队均可做 RAG
+  await seedCaseLibrary(tenant2.id, project2.id, [
+    {
+      title: '优秀案例：机器人机械结构设计的轻量化思路',
+      content: '结构件过重会导致运动响应滞后。获奖作品普遍采用碳纤维支架与3D打印件组合，既保证强度又降低惯量，并给出扭矩校核与运动仿真截图。',
+      category: '机械结构',
+      tags: ['机器人', '机械设计', '轻量化'],
+    },
+    {
+      title: '优秀案例：视觉识别算法的鲁棒性提升',
+      content: '视觉识别受光照、遮挡影响大。应加入数据增强、多尺度检测与置信度过滤，并展示不同场景下的识别准确率对比。',
+      category: '算法',
+      tags: ['视觉识别', '鲁棒性', '算法调优'],
+    },
+    {
+      title: '优秀案例：车路协同感知决策的案例写法',
+      content: '车路协同需说明车端与路侧端的职责边界、通信协议与容错机制。用状态机图说明决策流程，并给出典型交通场景下的决策结果。',
+      category: '车路协同',
+      tags: ['智能网联汽车', '感知决策', '车路协同'],
+    },
+    {
+      title: '优秀案例：实车联调中的安全策略',
+      content: '实车调试必须包含急停、限速、异常退出等安全策略，并在文档中明确人员分工与场地安全规范。',
+      category: '安全规范',
+      tags: ['智能网联汽车', '实车联调', '安全'],
+    },
+  ]);
+  await seedCaseLibrary(infoTenant.id, softwareTestProject.id, [
+    {
+      title: '优秀案例：自动化测试框架的分层设计',
+      content: '测试框架应分为用例层、执行层、报告层。用例层使用数据驱动，执行层支持并发与重试，报告层输出可视化统计与缺陷分布。',
+      category: '测试框架',
+      tags: ['软件测试', '自动化测试', '框架设计'],
+    },
+    {
+      title: '优秀案例：等价类与边界值用例设计',
+      content: '功能测试优先采用等价类划分与边界值分析，确保覆盖正常、异常与临界输入。用例应包含前置条件、执行步骤、预期结果三要素。',
+      category: '用例设计',
+      tags: ['软件测试', '用例设计', '等价类'],
+    },
+    {
+      title: '优秀案例：大数据清洗的异常处理',
+      content: '原始数据常有缺失、重复、格式不一致问题。清洗流程应包括去重、缺失值填充、异常值检测与日志记录，并给出清洗前后数据量对比。',
+      category: '数据处理',
+      tags: ['大数据', '数据清洗', '异常处理'],
+    },
+    {
+      title: '优秀案例：可视化分析的设计规范',
+      content: '可视化应服务于结论，避免花哨。关键指标用趋势图与对比图呈现，并配以文字说明洞察；避免大段文字堆砌。',
+      category: '可视化',
+      tags: ['大数据', '可视化', '分析规范'],
+    },
+  ]);
+
+  // 9.4 学生学习记录 + 通知：让「学习记录/通知」在学生视角也有数据
+  const studentList: Array<{
+    student: typeof student1;
+    projectName: string;
+    isUploader: boolean;
+  }> = [
+    { student: student1, projectName: project.name, isUploader: true },
+    { student: student2, projectName: project2.name, isUploader: true },
+    { student: student3, projectName: project.name, isUploader: false },
+    { student: student4, projectName: project.name, isUploader: false },
+    { student: student5, projectName: project3.name, isUploader: true },
+    { student: student6, projectName: project3.name, isUploader: false },
+    { student: student7, projectName: softwareTestProject.name, isUploader: true },
+    { student: student8, projectName: bigdataProject.name, isUploader: true },
+    { student: student9, projectName: bigdataProject.name, isUploader: false },
+  ];
+  for (const s of studentList) {
+    await seedStudentEvents(s.student.id, s.projectName, s.isUploader);
+    await seedStudentNotifications(s.student.id, s.projectName, s.isUploader);
+  }
+
   // eslint-disable-next-line no-console
-  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / 智造先锋队(AI应用开发赛 完整) + 创新实验队(智能机器人赛 + 智能网联汽车赛 完整) + 信息工程学院代表队(软件测试赛项 + 大数据技术应用赛项 完整) + 学习记录 + 通知 + 三团队 + 学生(demo:陈晨/刘洋/张宇, innovation:赵磊/钱思源/吴雨桐, info:林浩/陈思琪/黄子轩) + 案例沉淀库(RAG)');
+  console.log('[seed] 演示数据已就绪：三团队 / 全部教师+学生 / 全部 5 大赛项 / 作品诊断 / 模拟答辩 / 资源知识库 / 案例沉淀库 / 学习记录 / 通知 / 赛后复盘 均已有演示数据（password: 123456）');
 }
 
 main()
