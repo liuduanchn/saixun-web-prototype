@@ -13,14 +13,22 @@ const mockUsers = {
   updatePassword: jest.fn(),
 };
 const mockJwt = { sign: jest.fn().mockReturnValue('test-token') };
-const mockConfig = {} as any;
+const mockConfig = { get: jest.fn().mockReturnValue(undefined) } as any;
+const mockPrisma = {
+  refreshToken: {
+    create: jest.fn().mockResolvedValue({}),
+    findUnique: jest.fn(),
+    update: jest.fn().mockResolvedValue({}),
+    updateMany: jest.fn().mockResolvedValue({}),
+  },
+};
 const compare = bcrypt.compare as jest.Mock;
 
 describe('AuthService', () => {
   let svc: AuthService;
   beforeEach(() => {
     jest.clearAllMocks();
-    svc = new AuthService(mockUsers as any, mockJwt as any, mockConfig);
+    svc = new AuthService(mockUsers as any, mockJwt as any, mockConfig, mockPrisma as any);
   });
 
   it('validateUser: 用户名不存在应抛 UnauthorizedException', async () => {

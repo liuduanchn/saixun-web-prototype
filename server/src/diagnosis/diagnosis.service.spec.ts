@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { DiagnosisService } from './diagnosis.service';
 
 const mockPrisma = {
+  $transaction: jest.fn((arr) => Promise.all(arr)),
   workVersion: {
     findUnique: jest.fn(),
     findMany: jest.fn(),
@@ -9,6 +10,7 @@ const mockPrisma = {
   diagnosis: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
     update: jest.fn(),
     create: jest.fn(),
   },
@@ -30,6 +32,7 @@ describe('DiagnosisService', () => {
       {} as any,
       { notify: jest.fn() } as any,
       { track: jest.fn() } as any,
+      { search: jest.fn().mockResolvedValue([]) } as any,
     );
   });
 

@@ -96,6 +96,7 @@ model User {
   notifications    Notification[]
   learningEvents   LearningEvent[]
   memberships      Membership[]
+  refreshTokens    RefreshToken[]
 
   @@unique([tenantId, username])
   @@index([tenantId])
@@ -238,6 +239,38 @@ model Notification {
   targetNav String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// 案例沉淀库：用于检索增强生成（RAG）。检索基于 Postgres 原生全文检索
+// （to_tsvector / plainto_tsquery，core 功能，无需 pgvector 扩展）。
+model CaseLibrary {
+  id        String   @id @default(cuid())
+  tenantId  String
+  title     String
+  content   String
+  category  String   @default("通用")
+  tags      String[] @default([])
+  projectId String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([projectId])
+}
+
+// 刷新令牌：持久化存储，支持主动失效（登出 / 改密踢下线）。
+// access_token 短期有效，refresh_token 长期有效且可轮换。
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique // 随机生成的刷新令牌原文
+  userId    String
+  tenantId  String
+  expiresAt DateTime
+  revokedAt DateTime? // 非空表示已失效
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }

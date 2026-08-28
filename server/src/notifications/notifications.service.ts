@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../auth/auth.service';
+import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 
 export interface NotificationView {
   id: string;
@@ -16,13 +17,19 @@ export interface NotificationView {
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(user: JwtPayload): Promise<NotificationView[]> {
-    const list = await this.prisma.notification.findMany({
-      where: { userId: user.sub },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return list.map((n) => ({
+  async list(user: JwtPayload, page: PageQuery = {}): Promise<Paged<NotificationView>> {
+    const p = parsePage(page);
+    const where = { userId: user.sub };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.notification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: p.skip,
+        take: p.take,
+      }),
+      this.prisma.notification.count({ where }),
+    ]);
+    const items: NotificationView[] = rows.map((n) => ({
       id: n.id,
       category: n.category,
       title: n.title,
@@ -31,6 +38,7 @@ export class NotificationsService {
       read: n.read,
       createdAt: n.createdAt.toISOString(),
     }));
+    return toPaged(items, total, p);
   }
 
   async markRead(id: string, user: JwtPayload) {

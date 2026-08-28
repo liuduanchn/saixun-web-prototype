@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   UseInterceptors,
+  UseFilters,
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
@@ -14,6 +15,8 @@ import * as multer from 'multer';
 import { WorksService } from './works.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
+import { MAX_FILE_SIZE } from '../storage/file-policy';
+import { FileUploadFilter } from '../storage/multer-exception.filter';
 
 @Controller('works')
 export class WorksController {
@@ -21,7 +24,13 @@ export class WorksController {
 
   /** 上传作品（multipart/form-data，字段名 file）。projectId 走 query。 */
   @Post()
-  @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
+  @UseFilters(FileUploadFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_FILE_SIZE },
+    }),
+  )
   upload(
     @UploadedFile() file: Express.Multer.File,
     @Query('projectId') projectId: string,
@@ -32,13 +41,22 @@ export class WorksController {
   }
 
   @Get()
-  findAll(@Query('projectId') projectId: string, @CurrentUser() user: JwtPayload) {
-    return this.works.findAll(projectId, user);
+  findAll(
+    @Query('projectId') projectId: string,
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.works.findAll(projectId, user, { page, pageSize });
   }
 
   @Get('mine')
-  findMine(@CurrentUser() user: JwtPayload) {
-    return this.works.findMine(user);
+  findMine(
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.works.findMine(user, { page, pageSize });
   }
 
   @Get(':id')

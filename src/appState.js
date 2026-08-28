@@ -1,4 +1,4 @@
-import { setToken } from "./api.js";
+import { clearTokens } from "./api.js";
 
 const SESSION_KEY = "saixun-session";
 
@@ -42,7 +42,7 @@ export function saveSession(storage, user) {
 export function clearSession(storage) {
   try {
     storage.removeItem(SESSION_KEY);
-    setToken(null);
+    clearTokens();
     return true;
   } catch {
     return false;

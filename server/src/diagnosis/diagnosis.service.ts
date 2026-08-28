@@ -11,7 +11,9 @@ import { AI_PROVIDER, AiProvider, ChatMessage } from '../ai/ai.interface';
 import { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LearningService } from '../learning/learning.service';
+import { CaseLibraryService } from '../case-library/case-library.service';
 import { Severity, DiagnosisStatus } from '@prisma/client';
+import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 
 interface Finding {
   index?: number;
@@ -30,6 +32,7 @@ export class DiagnosisService {
     @Inject(AI_PROVIDER) private readonly ai: AiProvider,
     private readonly notifications: NotificationsService,
     private readonly learning: LearningService,
+    private readonly cases: CaseLibraryService,
   ) {}
 
   private async assertWorkTenant(workVersionId: string, tenantId: string) {
@@ -66,9 +69,12 @@ export class DiagnosisService {
 
     const content = await this.readText(wv.fileRef);
 
+    // RAG 检索增强：从案例沉淀库召回与作品内容最相关的 top-K 案例，注入诊断 prompt
+    const relevantCases = await this.cases.search(user.tenantId, content.slice(0, 2000), 5);
+
     let findings: Finding[];
     try {
-      findings = await this.callAi(points, content);
+      findings = await this.callAi(points, content, relevantCases);
     } catch {
       findings = this.heuristic(points, content);
     }
@@ -109,14 +115,20 @@ export class DiagnosisService {
     return created;
   }
 
-  /** 真实调用大模型：要求返回 JSON 数组（每项对应一个评分点） */
+  /** 真实调用大模型：要求返回 JSON 数组（每项对应一个评分点），可选注入检索到的参考案例 */
   private async callAi(
     points: { name: string; criterion: { name: string } }[],
     content: string,
+    cases: { title: string; content: string }[] = [],
   ): Promise<Finding[]> {
     const pointList = points
       .map((p, i) => `${i + 1}. 【${p.criterion.name}】${p.name}`)
       .join('\n');
+    const caseBlock =
+      cases && cases.length
+        ? `\n\n参考案例（来自案例沉淀库，可借鉴其思路与表述，但须结合本作品实际判断）：\n` +
+          cases.map((c, i) => `案例${i + 1}【${c.title}】：${c.content}`).join('\n')
+        : '';
     const messages: ChatMessage[] = [
       {
         role: 'system',
@@ -131,7 +143,8 @@ export class DiagnosisService {
         role: 'user',
         content:
           `评分标准列表：\n${pointList}\n\n` +
-          `学生作品内容：\n${content || '（未提供可解析文本，请基于评分点给出通用性评估）'}`,
+          `学生作品内容：\n${content || '（未提供可解析文本，请基于评分点给出通用性评估）'}` +
+          caseBlock,
       },
     ];
     const raw = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 4000 });
@@ -195,19 +208,27 @@ export class DiagnosisService {
     return [];
   }
 
-  /** 学生的「诊断反馈」：返回该学生本人上传作品版本的全部诊断记录 */
-  async findMine(user: JwtPayload) {
+  /** 学生的「诊断反馈」：返回该学生本人上传作品版本的全部诊断记录（分页） */
+  async findMine(user: JwtPayload, page: PageQuery = {}): Promise<Paged<any>> {
+    const p = parsePage(page);
     const workVersions = await this.prisma.workVersion.findMany({
       where: { uploaderId: user.sub, project: { tenantId: user.tenantId } },
       select: { id: true },
     });
     const ids = workVersions.map((w) => w.id);
-    if (ids.length === 0) return [];
-    return this.prisma.diagnosis.findMany({
-      where: { workVersionId: { in: ids } },
-      include: { scorePoint: { include: { criterion: true } }, workVersion: { select: { id: true, version: true, project: { select: { id: true, name: true } } } } },
-      orderBy: { matchScore: 'asc' },
-    });
+    if (ids.length === 0) return toPaged([], 0, p);
+    const where = { workVersionId: { in: ids } };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.diagnosis.findMany({
+        where,
+        include: { scorePoint: { include: { criterion: true } }, workVersion: { select: { id: true, version: true, project: { select: { id: true, name: true } } } } },
+        orderBy: { matchScore: 'asc' },
+        skip: p.skip,
+        take: p.take,
+      }),
+      this.prisma.diagnosis.count({ where }),
+    ]);
+    return toPaged(items, total, p);
   }
 
   async findByWorkVersion(workVersionId: string, user: JwtPayload) {

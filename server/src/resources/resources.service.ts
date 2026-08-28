@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface';
+import { assertFileAllowed } from '../storage/file-policy';
+import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 import { JwtPayload } from '../auth/auth.service';
 import { z } from 'zod';
 
@@ -39,13 +41,21 @@ export class ResourcesService {
     return project;
   }
 
-  async list(projectId: string, user: JwtPayload) {
+  async list(projectId: string, user: JwtPayload, page: PageQuery = {}): Promise<Paged<any>> {
     await this.assertProjectTenant(projectId, user.tenantId);
-    const rows = await this.prisma.resource.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map((r) => ({ ...r, url: r.fileRef ? this.storage.getUrl(r.fileRef) : null }));
+    const p = parsePage(page);
+    const where = { projectId };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.resource.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: p.skip,
+        take: p.take,
+      }),
+      this.prisma.resource.count({ where }),
+    ]);
+    const items = rows.map((r) => ({ ...r, url: r.fileRef ? this.storage.getUrl(r.fileRef) : null }));
+    return toPaged(items, total, p);
   }
 
   async create(
@@ -64,6 +74,7 @@ export class ResourcesService {
 
     let fileRef: string | undefined;
     if (file && file.buffer && file.buffer.length) {
+      assertFileAllowed(file);
       const stored = await this.storage.upload({
         buffer: file.buffer,
         filename: file.originalname,

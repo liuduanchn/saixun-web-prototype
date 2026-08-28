@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface';
+import { assertFileAllowed } from '../storage/file-policy';
+import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 import { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LearningService } from '../learning/learning.service';
@@ -36,6 +38,7 @@ export class WorksService {
     const project = await this.assertProjectTenant(projectId, user.tenantId);
     if (!file || !file.buffer || file.buffer.length === 0)
       throw new BadRequestException('未接收到文件或文件为空');
+    assertFileAllowed(file);
 
     const stored = await this.storage.upload({
       buffer: file.buffer,
@@ -80,25 +83,45 @@ export class WorksService {
     return wv;
   }
 
-  async findAll(projectId: string, user: JwtPayload) {
+  async findAll(
+    projectId: string,
+    user: JwtPayload,
+    page: PageQuery = {},
+  ): Promise<Paged<any>> {
     await this.assertProjectTenant(projectId, user.tenantId);
-    return this.prisma.workVersion.findMany({
-      where: { projectId },
-      include: { uploader: { select: { id: true, name: true } } },
-      orderBy: { version: 'desc' },
-    });
+    const p = parsePage(page);
+    const where = { projectId };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.workVersion.findMany({
+        where,
+        include: { uploader: { select: { id: true, name: true } } },
+        orderBy: { version: 'desc' },
+        skip: p.skip,
+        take: p.take,
+      }),
+      this.prisma.workVersion.count({ where }),
+    ]);
+    return toPaged(items, total, p);
   }
 
   /** 学生的「我的作品」：仅返回当前用户本人上传、且属于当前租户的作品版本 */
-  async findMine(user: JwtPayload) {
-    return this.prisma.workVersion.findMany({
-      where: { uploaderId: user.sub, project: { tenantId: user.tenantId } },
-      include: {
-        project: { select: { id: true, name: true } },
-        uploader: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findMine(user: JwtPayload, page: PageQuery = {}): Promise<Paged<any>> {
+    const p = parsePage(page);
+    const where = { uploaderId: user.sub, project: { tenantId: user.tenantId } };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.workVersion.findMany({
+        where,
+        include: {
+          project: { select: { id: true, name: true } },
+          uploader: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: p.skip,
+        take: p.take,
+      }),
+      this.prisma.workVersion.count({ where }),
+    ]);
+    return toPaged(items, total, p);
   }
 
   async findOne(id: string, user: JwtPayload) {

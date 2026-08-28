@@ -20,7 +20,8 @@ import { TenantGuard } from './guards/tenant.guard';
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET') || 'change-me-in-production',
         signOptions: {
-          expiresIn: (config.get<string>('JWT_EXPIRES_IN') || '7d') as any,
+          // access_token 短期有效（默认 12h），配合 /auth/refresh 续期；可经 JWT_EXPIRES_IN 覆盖
+          expiresIn: (config.get<string>('JWT_EXPIRES_IN') || '12h') as any,
         },
       }),
     }),

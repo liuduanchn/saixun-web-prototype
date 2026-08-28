@@ -1,6 +1,7 @@
 // 赛训智舱前端 API 客户端
-// 基础地址：VITE_API_BASE（未配置时走相对路径 /api，配合 vite dev 代理到后端 :3001）
-// 鉴权：登录后从后端拿到 access_token，存入 localStorage，后续请求自动携带 Bearer。
+// 基础地址：VITE_API_BASE（未配置时走相对路径 /api，配合 vite dev 代理到后端 :8080）
+// 鉴权：登录后从后端拿到 access_token + refresh_token，存入 localStorage；
+//       access_token 短期有效，请求自动携带 Bearer；遇到 401 自动用 refresh_token 续期一次后重试。
 // 演示兜底：当未配置 VITE_API_BASE 时 DEMO_MODE=true，数据驱动的页面回退到内置示例数据，
 //          保证未连接后端的线上演示页仍可正常展示。
 
@@ -10,6 +11,7 @@ export const DEMO_MODE = !import.meta.env.VITE_API_BASE;
 export const PROJECT_ID = import.meta.env.VITE_PROJECT_ID || "demo-project";
 
 const TOKEN_KEY = "saixun-token";
+const REFRESH_KEY = "saixun-refresh";
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -27,16 +29,59 @@ export function getToken() {
   }
 }
 
-export function setToken(token) {
+export function getRefreshToken() {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
+    return localStorage.getItem(REFRESH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 存储令牌对（登录 / 刷新成功后调用） */
+export function setTokens(accessToken, refreshToken) {
+  try {
+    if (accessToken) localStorage.setItem(TOKEN_KEY, accessToken);
+    if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
   } catch {
     /* 忽略存储异常 */
   }
 }
 
-async function request(path, options = {}) {
+/** 清除本地所有令牌（登出 / 刷新失败兜底） */
+export function clearTokens() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+  } catch {
+    /* 忽略存储异常 */
+  }
+}
+
+// 防止并发 401 触发多次刷新；同一时刻仅允许一次刷新流程
+let refreshing = null;
+
+async function doRefresh() {
+  if (refreshing) return refreshing;
+  const refreshToken = getRefreshToken();
+  refreshing = (async () => {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new ApiError("刷新失败", res.status);
+    const data = text ? JSON.parse(text) : null;
+    if (!data || !data.access_token) throw new ApiError("刷新失败", res.status);
+    setTokens(data.access_token, data.refresh_token);
+    return data.access_token;
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+async function request(path, options = {}, _isRetry = false) {
   const { method = "GET", body, auth = true, isForm = false } = options;
   const headers = {};
   if (auth) {
@@ -61,9 +106,15 @@ async function request(path, options = {}) {
     throw new ApiError("无法连接服务器，请确认后端服务已启动", 0);
   }
 
-  if (res.status === 401) {
-    setToken(null);
-    throw new ApiError("登录已失效，请重新登录", 401);
+  // access_token 过期：尝试用 refresh_token 续期一次后重试原请求（仅一次，避免死循环）
+  if (res.status === 401 && !_isRetry && auth) {
+    try {
+      const newToken = await doRefresh();
+      return request(path, options, true);
+    } catch {
+      clearTokens();
+      throw new ApiError("登录已失效，请重新登录", 401);
+    }
   }
 
   const text = await res.text();
@@ -93,8 +144,24 @@ export const api = {
         body: { username, password },
         auth: false,
       });
-      setToken(data.access_token);
+      setTokens(data.access_token, data.refresh_token);
       return data.user;
+    },
+    /** 登出：吊销刷新令牌 + 清除本地令牌（失败也保证本地清除） */
+    async logout() {
+      const refreshToken = getRefreshToken();
+      try {
+        await request(
+          "/auth/logout",
+          { method: "POST", body: refreshToken ? { refresh_token: refreshToken } : {} },
+          false,
+        );
+      } catch {
+        /* 忽略：即使后端注销失败，本地令牌也必须清除 */
+      } finally {
+        clearTokens();
+      }
+      return { ok: true };
     },
     me() {
       return request("/auth/me");

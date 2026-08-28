@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 import { CreateTaskDto, UpdateTaskDto } from './dto/task.dto';
 
 @Injectable()
@@ -57,13 +58,25 @@ export class TaskService {
     return created;
   }
 
-  async findAll(projectId: string, user: JwtPayload) {
+  async findAll(
+    projectId: string,
+    user: JwtPayload,
+    page: PageQuery = {},
+  ): Promise<Paged<any>> {
     await this.assertProjectTenant(projectId, user.tenantId);
-    return this.prisma.task.findMany({
-      where: { projectId },
-      include: { scorePoints: true, owner: { select: { id: true, name: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
+    const p = parsePage(page);
+    const where = { projectId };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.task.findMany({
+        where,
+        include: { scorePoints: true, owner: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'asc' },
+        skip: p.skip,
+        take: p.take,
+      }),
+      this.prisma.task.count({ where }),
+    ]);
+    return toPaged(items, total, p);
   }
 
   async update(id: string, dto: UpdateTaskDto, user: JwtPayload) {

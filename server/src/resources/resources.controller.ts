@@ -7,12 +7,15 @@ import {
   Param,
   Body,
   UseInterceptors,
+  UseFilters,
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
 import { ResourcesService } from './resources.service';
+import { MAX_FILE_SIZE } from '../storage/file-policy';
+import { FileUploadFilter } from '../storage/multer-exception.filter';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
 
@@ -21,13 +24,24 @@ export class ResourcesController {
   constructor(private readonly resources: ResourcesService) {}
 
   @Get()
-  list(@Query('projectId') projectId: string, @CurrentUser() user: JwtPayload) {
+  list(
+    @Query('projectId') projectId: string,
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
     if (!projectId) throw new BadRequestException('projectId 必填');
-    return this.resources.list(projectId, user);
+    return this.resources.list(projectId, user, { page, pageSize });
   }
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
+  @UseFilters(FileUploadFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_FILE_SIZE },
+    }),
+  )
   create(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: unknown,

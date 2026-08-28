@@ -51,4 +51,26 @@ export class AuthController {
     }
     return this.auth.changePassword(user, dto.data.oldPassword, dto.data.newPassword);
   }
+
+  /** 刷新令牌：用未过期的 refresh_token 换取新的令牌对（旧令牌被轮换吊销） */
+  @Public()
+  @Post('refresh')
+  async refresh(@Body() body: unknown) {
+    const schema = z.object({ refresh_token: z.string().min(1) });
+    const dto = schema.safeParse(body);
+    if (!dto.success) {
+      throw new BadRequestException('缺少 refresh_token');
+    }
+    return this.auth.refresh(dto.data.refresh_token);
+  }
+
+  /** 登出：吊销指定刷新令牌（主动失效，可选；不传则仅前端清除） */
+  @Public()
+  @Post('logout')
+  logout(@Body() body: unknown) {
+    const schema = z.object({ refresh_token: z.string().min(1).optional() });
+    const dto = schema.safeParse(body);
+    const refreshToken = dto.success ? dto.data.refresh_token : undefined;
+    return this.auth.logout(refreshToken);
+  }
 }

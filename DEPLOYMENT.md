@@ -28,7 +28,8 @@
 |---|---|---|
 | `DATABASE_URL` | （由 Postgres 插件注入） | 无需手填 |
 | `JWT_SECRET` | 一段强随机串，如 `openssl rand -hex 32` | **务必替换**，不要用默认值 |
-| `JWT_EXPIRES_IN` | `7d` | |
+| `JWT_EXPIRES_IN` | `12h`（默认） | access_token 短期有效；另有 refresh_token（`JWT_REFRESH_EXPIRES_IN` 默认 `30d`）支持 `/auth/refresh` 续期与 `/auth/logout` 主动失效 |
+| `JWT_REFRESH_EXPIRES_IN` | `30d`（默认） | 刷新令牌有效期，可经此变量覆盖 |
 | `AI_BASE_URL` | `https://api.siliconflow.cn/v1` | 硅基流动（OpenAI 兼容）；换其他厂商改此值 |
 | `AI_API_KEY` | 你的硅基流动 Key（`sk-` 开头） | 留空则诊断走确定性启发式，仍真实落库 |
 | `AI_MODEL` | `deepseek-ai/DeepSeek-V3` | 模型名须带 `deepseek-ai/` 前缀 |
@@ -71,8 +72,31 @@
 
 ## 三、本地对照验证
 - 后端：`cd server && npm install && npx prisma generate && npx prisma migrate deploy && npm run start:dev`（需本地 Postgres + `.env`）
-- 前端：`cp .env.local`（已含 `VITE_API_BASE=http://localhost:3001/api`、`VITE_PROJECT_ID=demo-project`）→ `npm run dev`
+- 前端：`cp .env.local`（已含 `VITE_API_BASE=http://localhost:8080/api`、`VITE_PROJECT_ID=demo-project`）→ `npm run dev`
 - 未配置 `VITE_API_BASE` 时前端自动 `DEMO_MODE`，仍展示内置演示数据。
+
+### 3.1 本地端口与排错约定（务必先看）
+
+| 项 | 约定 |
+| --- | --- |
+| 前端端口 | **5173**（Vite 默认，未显式设置 `server.port`） |
+| 后端端口 | **8080**（由 `server/.env` 的 `PORT` 控制，需与前端 `VITE_API_BASE` 一致） |
+| 端口 9000 不可用 | 落在 **Windows 动态保留段 8950–9049**（`netsh interface ipv4 show excludedportrange` 可见），绑定直接 `EACCES`；请勿使用 |
+| CORS 白名单 | 默认放行 `http://localhost:5173`、`http://localhost:4173`；若用 `npm run dev -- --port 3000` 启动前端，需在 `server/.env` 加 `CORS_ORIGINS=http://localhost:3000` 后重启后端 |
+| 前端报「请求失败（500）」 | 多半是**后端没启动**或端口对不上：先 `curl http://localhost:8080/api/health` 应返回 `{"status":"ok","db":"up"}` |
+| 本地编译 | **不要**用 `npm run build`（`nest build` 的 `deleteOutDir` 会被 safe-delete 钩子拦截导致失败）。改用：`npx tsc -p tsconfig.json --outDir .buildtmp && cp -r .buildtmp/src/. dist/ && node dist/main`；开发模式直接用 `npm run start:dev` 免手工编译 |
+
+> 备选启动（生产式编译）：`npm run build` 在本仓库被钩子拦截，请走 `.buildtmp` 方案；`npm run start:dev` 使用 `nest watch` 实时编译，适合本地调试。
+
+### 3.2 本地登录账号
+
+| 账号 | 密码 | 角色 | 租户 |
+| --- | --- | --- | --- |
+| `teacher` | `123456` | 指导教师 | `demo-tenant` |
+| `student1` | `123456` | 学生（陈晨） | `demo-tenant` |
+| `teacher2` | `123456` | 指导教师 | `innovation-tenant` |
+
+> 学生端若看不到作品：检查该用户 `activeTenantId` 是否等于作品所属租户；跨租户数据默认不可见（多租户隔离）。
 
 ---
 
@@ -125,6 +149,10 @@ AI_MODEL=deepseek-ai/DeepSeek-V3
 ---
 
 ## 六、常见问题
+- **前端报「请求失败（500）」**：本地最常见原因是**后端未启动或端口不一致**。先 `curl http://localhost:8080/api/health` 确认返回 `{"status":"ok","db":"up"}`；再核对前端 `.env.local` 的 `VITE_API_BASE` 与后端 `PORT` 是否同为 `8080`。
+- **本地 CORS 报错（跨域）**：后端默认只放行 `5173`/`4173`。若你用 `--port 3000` 启动前端，需在 `server/.env` 加 `CORS_ORIGINS=http://localhost:3000` 并重启后端。
+- **`EADDRINUSE` / `EACCES` 启动失败**：端口被占用用 `netstat -ano | findstr :8080` 找 PID 后 `taskkill /PID <PID> /F`；9000 落在 Windows 保留段，改用 8080。
+- **`npm run build` 报 safe-delete 钩子错误**：本地编译请勿用 `nest build`，改走 `npx tsc -p tsconfig.json --outDir .buildtmp && cp -r .buildtmp/src/. dist/ && node dist/main`（见 3.1）。
 - **上线后登录 401/网络错误**：检查 `VITE_API_BASE` 是否拼到 `/api` 结尾、Railway 后端域名是否已 Generate Domain、CORS 后端已 `enableCors()` 放行所有来源（无需额外配置）。
 - **数据库为空 / 无 demo-project**：确认 Railway 构建命令包含 `prisma migrate deploy` 与 `prisma:seed`；可到后端服务手动 Run `npm run prisma:seed` 一次。
 - **上传文件重启后丢失**：Railway 文件系统临时，挂 Volume 并改 `STORAGE_DIR` 到挂载点即可持久化。

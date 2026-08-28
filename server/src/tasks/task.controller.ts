@@ -27,9 +27,14 @@ export class TaskController {
   }
 
   @Get()
-  list(@Query('projectId') projectId: string, @CurrentUser() user: JwtPayload) {
+  list(
+    @Query('projectId') projectId: string,
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
     if (!projectId) throw new BadRequestException('projectId 必填');
-    return this.task.findAll(projectId, user);
+    return this.task.findAll(projectId, user, { page, pageSize });
   }
 
   @Get('coverage')

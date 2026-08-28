@@ -12,7 +12,7 @@ import {
 import { LoginScreen } from "./LoginScreen.jsx";
 import { WorkspacePage } from "./pages.jsx";
 import { getSidebarPresentation } from "./sidebarState.js";
-import { api, DEMO_MODE, PROJECT_ID, setToken } from "./api.js";
+import { api, DEMO_MODE, PROJECT_ID, setTokens } from "./api.js";
 import { normalizeTask } from "./taskModel.js";
 
 const stages = [
@@ -230,6 +230,10 @@ export function App() {
     if (!DEMO_MODE) api.notifications.markAllRead().catch(() => {});
   };
   const logout = () => {
+    if (!DEMO_MODE) {
+      // 吊销刷新令牌 + 清除本地令牌（失败也保证本地清除）
+      api.auth.logout().catch(() => {});
+    }
     clearSession(window.localStorage);
     setProfileOpen(false);
     setNotificationOpen(false);
@@ -245,7 +249,7 @@ export function App() {
     const target = teams.find((t) => t.tenantId === tenantId);
     try {
       const result = await api.tenants.switch(tenantId);
-      setToken(result.access_token);
+      setTokens(result.access_token, result.refresh_token);
       saveSession(window.localStorage, result.user);
       setUser(result.user);
       setActiveTenantId(tenantId);

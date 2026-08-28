@@ -16,7 +16,8 @@ async function main() {
   const passwordHash = await bcrypt.hash('123456', 10);
   await prisma.user.upsert({
     where: { tenantId_username: { username: 'teacher', tenantId: tenant.id } },
-    update: {},
+    // 每次 seed 都确保活跃团队回到本租户（演示数据一致性，避免历史手动切换残留）
+    update: { activeTenantId: tenant.id },
     create: {
       tenantId: tenant.id,
       activeTenantId: tenant.id,
@@ -388,8 +389,74 @@ async function main() {
     });
   }
 
+  // 7.9 案例沉淀库（RAG 检索增强）：为 demo-tenant 注入若干示例案例，供诊断时检索借鉴
+  const caseCount = await prisma.caseLibrary.count({ where: { tenantId: 'demo-tenant' } });
+  if (caseCount === 0) {
+    const demoCases: Array<{
+      title: string;
+      content: string;
+      category: string;
+      tags: string[];
+    }> = [
+      {
+        title: '优秀案例：需求理解不清导致功能覆盖不足',
+        content:
+          '某参赛作品未充分研读赛项规程，导致评分点"需求理解与功能覆盖"严重失分。改进做法：先用思维导图拆解评分标准，将每个评分点映射为可验证的功能清单，再逐一实现并自测。',
+        category: '需求与功能',
+        tags: ['需求理解', '功能覆盖', '评分标准'],
+      },
+      {
+        title: '优秀案例：核心功能实现规范性提升路径',
+        content:
+          '作品"核心功能实现规范性"得分偏低，常见原因是代码缺少模块边界与单元测试。规范做法：按分层架构组织代码，关键算法提供单元测试用例，并在文档中说明输入输出约束。',
+        category: '实现规范',
+        tags: ['核心功能', '实现规范', '单元测试'],
+      },
+      {
+        title: '优秀案例：架构设计先进性的体现',
+        content:
+          '架构设计评分关注解耦与可扩展性。获奖作品普遍采用清晰的模块划分、统一接口与配置驱动，避免硬编码；并用架构图说明各模块职责与数据流，便于评审理解。',
+        category: '架构设计',
+        tags: ['架构设计', '解耦', '可扩展性'],
+      },
+      {
+        title: '优秀案例：创新点的明确表达',
+        content:
+          '创新点不清晰是高频扣分项。应将创新落到一个具体、可演示的能力上，例如引入自研算法或跨界技术，并用对比实验说明相对通用方案的提升，避免空泛表述。',
+        category: '创新点',
+        tags: ['创新点', '方案独特性', '亮点'],
+      },
+      {
+        title: '优秀案例：文档完整性与规范性的写法',
+        content:
+          '参赛文档须包含需求分析、设计方案、实现说明、测试验证与总结。使用统一模板、配图与表格，避免大段文字；关键结论用加粗突出，便于评审快速抓取要点。',
+        category: '文档',
+        tags: ['文档完整性', '规范性', '模板'],
+      },
+      {
+        title: '优秀案例：应用效果与性能表现的佐证',
+        content:
+          '评分点"应用效果与性能表现"需要真实数据佐证。应提供运行截图、响应时延对比、并发测试结果，并对异常场景给出容错说明，体现功能稳定性与鲁棒性。',
+        category: '性能与效果',
+        tags: ['应用效果', '性能表现', '鲁棒性'],
+      },
+    ];
+    for (const c of demoCases) {
+      await prisma.caseLibrary.create({
+        data: {
+          tenantId: 'demo-tenant',
+          projectId: project.id,
+          title: c.title,
+          content: c.content,
+          category: c.category,
+          tags: c.tags,
+        },
+      });
+    }
+  }
+
   // eslint-disable-next-line no-console
-  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / 智造先锋队(AI应用开发赛 完整) + 创新实验队(智能机器人赛 + 智能网联汽车赛 完整) + 学习记录 + 通知 + 双团队 + 学生(demo:陈晨/刘洋/张宇, innovation:赵磊/钱思源/吴雨桐)');
+  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / 智造先锋队(AI应用开发赛 完整) + 创新实验队(智能机器人赛 + 智能网联汽车赛 完整) + 学习记录 + 通知 + 双团队 + 学生(demo:陈晨/刘洋/张宇, innovation:赵磊/钱思源/吴雨桐) + 案例沉淀库(RAG)');
 }
 
 main()

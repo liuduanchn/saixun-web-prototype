@@ -101,12 +101,49 @@ flowchart LR
 
 建议使用 Node.js 20 LTS 或更高版本。
 
+### 仅前端（演示模式，无需后端）
+
 ```bash
 npm install
 npm run dev
 ```
 
-开发服务器启动后，按终端输出的地址访问页面。
+开发服务器启动后，按终端输出的地址访问页面。未配置 `VITE_API_BASE` 时自动进入 `DEMO_MODE`，展示内置示例数据。
+
+### 全栈本地运行（前端 + 后端 + 数据库）
+
+项目已具备真实后端（NestJS + Prisma + PostgreSQL），可走完整数据闭环。
+
+**端口约定（重要）**
+
+| 项 | 值 | 说明 |
+| --- | --- | --- |
+| 前端 | **5173** | Vite 默认端口 |
+| 后端 | **8080** | `server/.env` 的 `PORT`，须与前端 `VITE_API_BASE` 一致 |
+| 端口 9000 | ❌ 不可用 | 落在 Windows 动态保留段 8950–9049，绑定直接 `EACCES` |
+
+**步骤**
+
+```bash
+# 1. 数据库（PostgreSQL 已在 :5432 运行）
+cd server
+npm install
+npx prisma generate && npx prisma migrate deploy && npm run prisma:seed
+
+# 2. 启动后端（:8080）；本地编译请用 .buildtmp 绕过 safe-delete 钩子
+npx tsc -p tsconfig.json --outDir .buildtmp && cp -r .buildtmp/src/. dist/ && node dist/main
+# 健康检查：curl http://localhost:8080/api/health → {"status":"ok","db":"up"}
+
+# 3. 另开终端启动前端（:5173）
+cd ..
+npm run dev          # .env.local 中 VITE_API_BASE=http://localhost:8080/api
+```
+
+> 不要用 `npm run build` 编译后端：`nest build` 的 `deleteOutDir` 会被 safe-delete 钩子拦截。开发期直接用 `npm run start:dev`（nest watch）更省事。
+
+**本地账号**（密码均为 `123456`）：`teacher`（教师 / `demo-tenant`）、`student1`（学生 陈晨 / `demo-tenant`）、`teacher2`（教师 / `innovation-tenant`）。前端报「请求失败（500）」多半是后端没起，先 `curl http://localhost:8080/api/health` 验证。
+
+> 跨域：后端默认放行 `5173`/`4173`；若用 `--port 3000` 启动前端，需在 `server/.env` 加 `CORS_ORIGINS=http://localhost:3000` 后重启后端。
 
 ## 测试与构建
 
@@ -148,7 +185,11 @@ saixun-web-prototype/
 
 ## 当前范围
 
-本项目是教学智能体大赛场景下的前端交互原型，当前数据为演示数据，暂未接入真实后端、文件解析模型、数据库与生产级权限系统。后续可在现有信息架构上逐步接入赛项文档解析、智能诊断、语音答辩与学习分析服务。
+项目已从前端交互原型演进为**前后端一体**的备赛智能体：后端（NestJS + Prisma + PostgreSQL）提供真实鉴权、多租户隔离、作品存储、赛项解析、作品诊断、模拟答辩、通知与学习埋点等能力，前端通过 `VITE_API_BASE` 连接后端；未配置时仍回退 `DEMO_MODE` 展示内置示例数据。
+
+已具备：JWT 鉴权与刷新令牌续期、多租户数据隔离、文件上传大小/类型限制、列表分页、检索增强（RAG，基于 Postgres 全文检索的案例沉淀库）、通知事件驱动与学习埋点。
+
+后续可进一步完善：向量化检索（当前为关键词全文检索）、后端容器化部署骨架、前端 E2E 测试、API 文档（Swagger）与线上监控。
 
 ## 许可说明
 
