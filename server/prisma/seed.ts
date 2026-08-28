@@ -4,6 +4,59 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+// 通用：为某赛项写入评分维度 + 评分点 + 任务（幂等，仅在缺失时写入）。
+// 用于「适度扩充」时快速构建一套完整可演示的赛项闭环数据。
+async function seedProjectWithCriteria(
+  projectId: string,
+  tenantId: string,
+  name: string,
+  competition: string,
+  stage: 'UNDERSTAND' | 'DESIGN' | 'PROTOTYPE' | 'POLISH' | 'DEFENSE' | 'REVIEW',
+  criteriaData: Array<{ name: string; weight: number; points: string[] }>,
+  tasks: Array<{
+    title: string;
+    status: 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'NEEDS_FIX' | 'DONE';
+    pointNames: string[];
+  }>,
+) {
+  const project = await prisma.project.upsert({
+    where: { id: projectId },
+    update: {},
+    create: { id: projectId, tenantId, name, competition, currentStage: stage },
+  });
+  const cCount = await prisma.criterion.count({ where: { projectId: project.id } });
+  if (cCount === 0) {
+    for (const c of criteriaData) {
+      const criterion = await prisma.criterion.create({
+        data: { projectId: project.id, name: c.name, weight: c.weight },
+      });
+      for (const p of c.points) {
+        await prisma.scorePoint.create({
+          data: { criterionId: criterion.id, name: p, abilityTags: [p] },
+        });
+      }
+    }
+  }
+  const tCount = await prisma.task.count({ where: { projectId: project.id } });
+  if (tCount === 0) {
+    const points = await prisma.scorePoint.findMany({ where: { criterion: { projectId: project.id } } });
+    const byName = (n: string) => points.find((p) => p.name === n)?.id;
+    for (const t of tasks) {
+      const ids = t.pointNames.map(byName).filter(Boolean) as string[];
+      await prisma.task.create({
+        data: {
+          projectId: project.id,
+          title: t.title,
+          status: t.status,
+          done: t.status === 'DONE',
+          scorePoints: ids.length ? { connect: ids.map((id) => ({ id })) } : undefined,
+        },
+      });
+    }
+  }
+  return project;
+}
+
 async function main() {
   // 1. 演示租户（幂等）
   const tenant = await prisma.tenant.upsert({
@@ -455,8 +508,190 @@ async function main() {
     }
   }
 
+  // 8. 适度扩充：信息工程学院代表队（贴合金华职业技术大学首届教学智能体大赛真实场景）
+  //    给「团队 / 人员 / 赛项」三类核心实体补充一套连贯的演示数据。
+  const infoTenant = await prisma.tenant.upsert({
+    where: { id: 'info-tenant' },
+    update: {},
+    create: { id: 'info-tenant', name: '信息工程学院代表队' },
+  });
+
+  // 8.1 指导教师（3 名，均归属信息工程学院，密码 123456）
+  const teacher3 = await prisma.user.upsert({
+    where: { tenantId_username: { username: 'teacher3', tenantId: infoTenant.id } },
+    update: { name: '王敏' },
+    create: {
+      tenantId: infoTenant.id,
+      activeTenantId: infoTenant.id,
+      username: 'teacher3',
+      passwordHash,
+      name: '王敏',
+      role: 'TEACHER',
+    },
+  });
+  const teacher4 = await prisma.user.upsert({
+    where: { tenantId_username: { username: 'teacher4', tenantId: infoTenant.id } },
+    update: { name: '孙磊' },
+    create: {
+      tenantId: infoTenant.id,
+      activeTenantId: infoTenant.id,
+      username: 'teacher4',
+      passwordHash,
+      name: '孙磊',
+      role: 'TEACHER',
+    },
+  });
+  const teacher5 = await prisma.user.upsert({
+    where: { tenantId_username: { username: 'teacher5', tenantId: infoTenant.id } },
+    update: { name: '周婷' },
+    create: {
+      tenantId: infoTenant.id,
+      activeTenantId: infoTenant.id,
+      username: 'teacher5',
+      passwordHash,
+      name: '周婷',
+      role: 'TEACHER',
+    },
+  });
+
+  // 8.2 参赛学生（3 名，归属信息工程学院代表队）
+  const student7 = await prisma.user.upsert({
+    where: { tenantId_username: { username: 'student7', tenantId: infoTenant.id } },
+    update: { name: '林浩' },
+    create: {
+      tenantId: infoTenant.id,
+      activeTenantId: infoTenant.id,
+      username: 'student7',
+      passwordHash,
+      name: '林浩',
+      role: 'STUDENT',
+    },
+  });
+  const student8 = await prisma.user.upsert({
+    where: { tenantId_username: { username: 'student8', tenantId: infoTenant.id } },
+    update: { name: '陈思琪' },
+    create: {
+      tenantId: infoTenant.id,
+      activeTenantId: infoTenant.id,
+      username: 'student8',
+      passwordHash,
+      name: '陈思琪',
+      role: 'STUDENT',
+    },
+  });
+  const student9 = await prisma.user.upsert({
+    where: { tenantId_username: { username: 'student9', tenantId: infoTenant.id } },
+    update: { name: '黄子轩' },
+    create: {
+      tenantId: infoTenant.id,
+      activeTenantId: infoTenant.id,
+      username: 'student9',
+      passwordHash,
+      name: '黄子轩',
+      role: 'STUDENT',
+    },
+  });
+
+  // 8.3 成员资格（幂等）
+  await ensureMembership(teacher3.id, infoTenant.id, 'OWNER');
+  await ensureMembership(teacher4.id, infoTenant.id, 'TEACHER');
+  await ensureMembership(teacher5.id, infoTenant.id, 'TEACHER');
+  await ensureMembership(student7.id, infoTenant.id, 'STUDENT');
+  await ensureMembership(student8.id, infoTenant.id, 'STUDENT');
+  await ensureMembership(student9.id, infoTenant.id, 'STUDENT');
+
+  // 8.4 两个赛项（软件测试赛项 / 大数据技术应用赛项），含评分维度与任务，形成完整闭环
+  const genericCriteria = (techPoint: string) => [
+    { name: '功能完整性', weight: 25, points: ['需求理解与功能覆盖', '核心功能实现规范性', '功能稳定性与鲁棒性'] },
+    { name: '技术路线', weight: 20, points: ['技术选型合理性', '架构设计先进性', techPoint] },
+    { name: '创新价值', weight: 20, points: ['创新点明确性', '方案独特性与亮点', '技术创新性'] },
+    { name: '应用成效', weight: 20, points: ['应用效果与性能表现', '实际场景应用价值', '效益与影响力'] },
+    { name: '展示表达', weight: 15, points: ['文档完整性与规范性', '展示逻辑与表达清晰度', '答辩沟通表现'] },
+  ];
+
+  await seedProjectWithCriteria(
+    'software-test-project',
+    infoTenant.id,
+    '软件测试赛项',
+    '软件测试赛项',
+    'PROTOTYPE',
+    genericCriteria('测试技术应用正确性'),
+    [
+      { title: '梳理赛项规程与评分标准', status: 'DONE', pointNames: ['需求理解与功能覆盖'] },
+      { title: '搭建自动化测试框架', status: 'IN_PROGRESS', pointNames: ['核心功能实现规范性', '技术选型合理性'] },
+      { title: '典型缺陷场景用例设计', status: 'IN_REVIEW', pointNames: ['架构设计先进性'] },
+      { title: '补充性能测试方案', status: 'TODO', pointNames: ['创新点明确性', '方案独特性与亮点'] },
+      { title: '测试报告与文档撰写', status: 'TODO', pointNames: ['文档完整性与规范性'] },
+    ],
+  );
+  await seedProjectWithCriteria(
+    'bigdata-project',
+    infoTenant.id,
+    '大数据技术应用赛项',
+    '大数据技术应用赛项',
+    'UNDERSTAND',
+    genericCriteria('大数据处理技术应用正确性'),
+    [
+      { title: '梳理赛项规程与评分标准', status: 'DONE', pointNames: ['需求理解与功能覆盖'] },
+      { title: '数据采集与清洗 pipeline', status: 'IN_PROGRESS', pointNames: ['核心功能实现规范性', '技术选型合理性'] },
+      { title: '可视化分析与建模', status: 'TODO', pointNames: ['架构设计先进性'] },
+      { title: '撰写参赛文档', status: 'TODO', pointNames: ['文档完整性与规范性'] },
+    ],
+  );
+
+  // 8.5 teacher3 的学习记录与通知（演示信息工程学院代表队闭环）
+  const eventInfoCount = await prisma.learningEvent.count({ where: { userId: teacher3.id } });
+  if (eventInfoCount === 0) {
+    const base = Date.now();
+    const day = 86400000;
+    const eventsInfo: Array<{ type: string; payload: Record<string, unknown>; ago: number }> = [
+      { type: 'CRITERIA_PARSED', payload: { title: '赛项解析：软件测试赛项评分标准', points: 15 }, ago: 11 },
+      { type: 'TASK_CREATED', payload: { title: '搭建自动化测试框架', status: 'IN_PROGRESS' }, ago: 9 },
+      { type: 'WORK_UPLOADED', payload: { title: '测试方案 V1', version: 1 }, ago: 7 },
+      { type: 'DIAGNOSIS_RUN', payload: { title: '作品诊断：V1', findings: 19 }, ago: 6 },
+      { type: 'DEFENSE_RUN', payload: { title: '模拟答辩第 1 轮', rounds: 2 }, ago: 3 },
+      { type: 'REVIEW_GENERATED', payload: { title: '赛后复盘报告', coverage: 25 }, ago: 1 },
+    ];
+    for (const e of eventsInfo) {
+      await prisma.learningEvent.create({
+        data: { userId: teacher3.id, type: e.type, payload: e.payload as any, createdAt: new Date(base - e.ago * day) },
+      });
+    }
+  }
+  const notifInfoCount = await prisma.notification.count({ where: { userId: teacher3.id } });
+  if (notifInfoCount === 0) {
+    await prisma.notification.createMany({
+      data: [
+        {
+          userId: teacher3.id,
+          category: '作品诊断',
+          title: '作品 V1 诊断完成',
+          detail: '共识别 19 条问题发现，其中 11 条高风险，建议优先处理。',
+          targetNav: '作品诊断中心',
+          read: false,
+        },
+        {
+          userId: teacher3.id,
+          category: '任务复核',
+          title: '修改任务待复核',
+          detail: '「搭建自动化测试框架」已提交，等待教师复核与闭环。',
+          targetNav: '训练任务中心',
+          read: false,
+        },
+        {
+          userId: teacher3.id,
+          category: '模拟答辩',
+          title: '答辩反馈已生成',
+          detail: '第 2 轮模拟答辩完成，表达维度评分 86。',
+          targetNav: '模拟答辩室',
+          read: true,
+        },
+      ],
+    });
+  }
+
   // eslint-disable-next-line no-console
-  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / 智造先锋队(AI应用开发赛 完整) + 创新实验队(智能机器人赛 + 智能网联汽车赛 完整) + 学习记录 + 通知 + 双团队 + 学生(demo:陈晨/刘洋/张宇, innovation:赵磊/钱思源/吴雨桐) + 案例沉淀库(RAG)');
+  console.log('[seed] 演示数据已就绪：tenant / teacher(123456) / 智造先锋队(AI应用开发赛 完整) + 创新实验队(智能机器人赛 + 智能网联汽车赛 完整) + 信息工程学院代表队(软件测试赛项 + 大数据技术应用赛项 完整) + 学习记录 + 通知 + 三团队 + 学生(demo:陈晨/刘洋/张宇, innovation:赵磊/钱思源/吴雨桐, info:林浩/陈思琪/黄子轩) + 案例沉淀库(RAG)');
 }
 
 main()
