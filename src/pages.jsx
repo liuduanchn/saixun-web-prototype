@@ -538,7 +538,13 @@ function DefensePage({ onToast }) {
           setRecognizing(true);
           // 浏览器采集为 webm/opus，转码为 WAV(PCM) 以兼容线上 ASR
           const wavBlob = await recordingToWav(rawBlob);
-          const data = await api.speech.transcribe(wavBlob);
+          // 兜底超时：即使后端未返回，也确保识别状态不会永久卡死
+          const data = await Promise.race([
+            api.speech.transcribe(wavBlob),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("语音识别超时，请稍后重试")), 75000),
+            ),
+          ]);
           setAnswer((prev) => (prev && prev.trim() ? `${prev}\n${data.transcript}` : data.transcript));
           onToast("语音已转为文字并填入作答");
         } catch (e) {
