@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { UsersService } from '../users/users.service';
 import { AuthService, JwtPayload } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { Role, Prisma } from '@prisma/client';
 
 @Injectable()
 export class TenantsService {
@@ -46,6 +46,7 @@ export class TenantsService {
       createdAt: tenant.createdAt,
       memberCount,
       projectCount,
+      settings: tenant.settings,
     };
   }
 
@@ -56,6 +57,21 @@ export class TenantsService {
     if (trimmed.length > 40) throw new BadRequestException('团队名称过长');
     const tenant = await this.users.updateTenantName(user.tenantId, trimmed);
     return { id: tenant.id, name: tenant.name };
+  }
+
+  /** 更新团队级配置（JSON 合并）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName */
+  async updateSettings(settings: Record<string, unknown>, user: JwtPayload) {
+    if (!settings || typeof settings !== 'object') throw new BadRequestException('配置格式不正确');
+    const current = (await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+    }))?.settings as Record<string, unknown> | null;
+    const merged = { ...(current || {}), ...settings };
+    const tenant = await this.prisma.tenant.update({
+      where: { id: user.tenantId },
+      // merged 为运行时合并后的任意 JSON 对象，Prisma 的 InputJsonValue 类型校验较严，此处按 JSON 写入
+      data: { settings: merged as unknown as Prisma.InputJsonValue },
+    });
+    return { id: tenant.id, settings: tenant.settings };
   }
 
   /** 创建新团队：当前用户成为 OWNER 并自动切换为活跃团队 */

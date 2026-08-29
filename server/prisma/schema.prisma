@@ -59,6 +59,8 @@ model Tenant {
   id        String   @id @default(cuid())
   name      String
   createdAt DateTime @default(now())
+  // 租户级配置（JSON）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName
+  settings  Json?
   users     User[]
   projects  Project[]
   members   Membership[]
@@ -168,6 +170,7 @@ model WorkVersion {
   uploaderId String
   uploader   User     @relation(fields: [uploaderId], references: [id])
   fileRef    String
+  content    String?  // 上传文件抽取出的纯文本，供诊断/解析比对
   version    Int      @default(1)
   createdAt  DateTime @default(now())
 

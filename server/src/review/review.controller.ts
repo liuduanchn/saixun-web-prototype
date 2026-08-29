@@ -12,4 +12,11 @@ export class ReviewController {
     if (!projectId) throw new BadRequestException('projectId 必填');
     return this.review.summary(projectId, user);
   }
+
+  /** 案例沉淀：聚合赛项模板 / 典型问题 / 优秀做法，供赛后复盘展开 */
+  @Get('case-library')
+  caseLibrary(@Query('projectId') projectId: string, @CurrentUser() user: JwtPayload) {
+    if (!projectId) throw new BadRequestException('projectId 必填');
+    return this.review.caseLibrary(projectId, user);
+  }
 }

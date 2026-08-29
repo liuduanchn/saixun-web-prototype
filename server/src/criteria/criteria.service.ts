@@ -10,6 +10,7 @@ import { AI_PROVIDER, AiProvider, ChatMessage } from '../ai/ai.interface';
 import { JwtPayload } from '../auth/auth.service';
 import { LearningService } from '../learning/learning.service';
 import { extractJson } from '../common/llm.util';
+import { extractText } from '../common/text-extract';
 
 export interface ScorePointDraft {
   name: string;
@@ -62,6 +63,31 @@ export class CriteriaService {
       draft = this.heuristic(clean);
     }
     return { draft };
+  }
+
+  /**
+   * 赛项解析（文件版）：上传赛项规程文件（DOC/DOCX/PDF/TXT）→ 抽取文本 → 走 parse 流程。
+   * 供赛项解析中心"上传规程"入口调用，复用同一 LLM/启发式解析逻辑。
+   */
+  async parseFile(
+    file: { buffer: Buffer; mimetype?: string; originalname?: string },
+    user: JwtPayload,
+  ) {
+    let text: string;
+    try {
+      text = await extractText({
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        filename: file.originalname,
+      });
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      throw new BadRequestException(`无法解析规程文件：${(e as Error).message || '不支持的文件'}`);
+    }
+    if (!text || !text.trim()) {
+      throw new BadRequestException('未能从文件中提取到文本，请确认文件包含可读文本或更换格式');
+    }
+    return this.parse(text, user);
   }
 
   private async callAi(text: string): Promise<CriterionDraft[]> {

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, BookOpenText, Brain, Buildings, CalendarBlank, ChartBar, Check, CheckCircle,
   ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
-  Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X,
+  Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X, Microphone,
 } from "@phosphor-icons/react";
 import { StudentTasksPage, StudentWorksPage, StudentDiagnosisPage, StudentDefensePage } from "./studentPages.jsx";
 import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
@@ -50,6 +50,27 @@ function AnalysisPage({ onNavigate, onToast }) {
   const [text, setText] = useState("");
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const handleParseFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (DEMO_MODE) {
+      onToast("演示模式：文件上传不可用，请粘贴文本");
+      return;
+    }
+    setUploading(true);
+    try {
+      const { draft } = await api.criteria.parseFile(PROJECT_ID, file);
+      setDraft(draft);
+      onToast("规程文件已解析，请核对下方草稿");
+    } catch (e) {
+      onToast(e?.message || "规程文件解析失败");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (DEMO_MODE) { setList(criteria); return; }
@@ -108,7 +129,8 @@ function AnalysisPage({ onNavigate, onToast }) {
         <div className="panel-title"><h2>赛项规程解析（LLM）</h2>{busy && <StatusTag tone="blue">处理中…</StatusTag>}</div>
         <textarea aria-label="赛项规程文本" value={text} onChange={(e) => setText(e.target.value)} placeholder="在此粘贴赛项规程、评分标准或能力要求文本，智能体将自动抽取结构化评分要素……" />
         <div className="parse-actions">
-          <button className="page-primary" onClick={handleParse} disabled={busy}><Sparkle size={18} />AI 解析评分要素</button>
+          <label className="page-secondary upload-label">{uploading ? "解析中…" : <><CloudArrowUp size={18} />上传规程文件</>}<input type="file" accept=".doc,.docx,.pdf,.txt" hidden onChange={handleParseFile} disabled={busy || uploading} /></label>
+          <button className="page-primary" onClick={handleParse} disabled={busy || uploading}><Sparkle size={18} />AI 解析评分要素</button>
           {draft && <button className="secondary-button" onClick={() => setDraft(null)} disabled={busy}>清除草稿</button>}
         </div>
         {draft && (
@@ -131,8 +153,49 @@ function AnalysisPage({ onNavigate, onToast }) {
   </section>;
 }
 
-function TrainingPage({ onToast }) {
+// 任务状态机：看板 5 态流转（待开始→进行中→待审核→[确认通过/需修改]→已完成）
+const TASK_FORWARD = {
+  TODO: "IN_PROGRESS",
+  IN_PROGRESS: "IN_REVIEW",
+  IN_REVIEW: "DONE",
+  NEEDS_FIX: "IN_REVIEW",
+  DONE: "IN_REVIEW",
+};
+const TASK_BACK = {
+  TODO: null,
+  IN_PROGRESS: "TODO",
+  IN_REVIEW: "IN_PROGRESS",
+  NEEDS_FIX: "IN_REVIEW",
+  DONE: "IN_REVIEW",
+};
+// 推进按钮文案（教师对"待审核"可"确认通过"；学生仅能推进到"待审核"）
+const TASK_FWD_LABEL = {
+  TODO: "开始",
+  IN_PROGRESS: "提交审核",
+  IN_REVIEW: { TEACHER: "确认通过", STUDENT: null },
+  NEEDS_FIX: "重新提交",
+  DONE: "重新打开",
+};
+
+function seedDemoTasks() {
+  let n = 0;
+  return board.flatMap((col) => {
+    const status = COLUMN_STATUS[col.title] || "TODO";
+    return col.items.map((title) => ({
+      id: `demo-${n++}`,
+      title,
+      status,
+      done: status === "DONE",
+      scorePoints: [],
+      due: status === "DONE" ? "已完成" : "截止 08-28 18:00",
+    }));
+  });
+}
+
+function TrainingPage({ onToast, user }) {
+  const role = user?.role || "TEACHER";
   const [tasks, setTasks] = useState(DEMO_MODE ? null : []);
+  const [demoTasks, setDemoTasks] = useState(DEMO_MODE ? seedDemoTasks() : null);
   const [coverage, setCoverage] = useState(null);
   const [loading, setLoading] = useState(!DEMO_MODE);
   const [error, setError] = useState("");
@@ -161,6 +224,22 @@ function TrainingPage({ onToast }) {
     };
   }, []);
 
+  const list = DEMO_MODE ? demoTasks : tasks;
+
+  // 状态流转：统一入口，按状态机计算下一态并持久化
+  const setStatus = async (item, nextStatus) => {
+    if (DEMO_MODE) {
+      setDemoTasks((cur) => cur.map((t) => (t.id === item.id ? { ...t, status: nextStatus, done: nextStatus === "DONE" } : t)));
+      return;
+    }
+    try {
+      const updated = await api.tasks.update(item.id, { status: nextStatus });
+      setTasks((cur) => cur.map((t) => (t.id === item.id ? normalizeTask(updated) : t)));
+    } catch (err) {
+      onToast(err?.message || "更新失败");
+    }
+  };
+
   const createTask = async (status) => {
     const title = window.prompt("请输入任务标题");
     if (!title || !title.trim()) return;
@@ -177,23 +256,9 @@ function TrainingPage({ onToast }) {
     }
   };
 
-  const toggleDone = async (item) => {
-    const next = item.status === "DONE" ? "TODO" : "DONE";
-    if (DEMO_MODE) {
-      setTasks((cur) => cur.map((t) => (t.id === item.id ? { ...t, status: next, done: next === "DONE" } : t)));
-      return;
-    }
-    try {
-      const updated = await api.tasks.update(item.id, { status: next });
-      setTasks((cur) => cur.map((t) => (t.id === item.id ? normalizeTask(updated) : t)));
-    } catch (err) {
-      onToast(err?.message || "更新失败");
-    }
-  };
-
   const removeTask = async (item) => {
     if (DEMO_MODE) {
-      setTasks((cur) => cur.filter((t) => t.id !== item.id));
+      setDemoTasks((cur) => cur.filter((t) => t.id !== item.id));
       return;
     }
     try {
@@ -206,7 +271,7 @@ function TrainingPage({ onToast }) {
   };
 
   const columns = (() => {
-    if (DEMO_MODE || !tasks) {
+    if (!list) {
       return board.map((col) => ({
         ...col,
         items: col.items.map((title, i) => ({
@@ -214,12 +279,12 @@ function TrainingPage({ onToast }) {
           title,
           scorePointCount: i % 2 ? 3 : 5,
           due: col.tone === "green" ? "已完成" : "截止 08-28 18:00",
-          status: col.tone === "green" ? "DONE" : col.tone === "orange" ? "NEEDS_FIX" : "IN_PROGRESS",
+          status: COLUMN_STATUS[col.title] || "TODO",
           done: col.tone === "green",
         })),
       }));
     }
-    return buildColumns(tasks).map((col) => ({
+    return buildColumns(list).map((col) => ({
       ...col,
       items: col.items.map((t) => ({
         id: t.id,
@@ -241,10 +306,25 @@ function TrainingPage({ onToast }) {
     <div className="stage-compact">{['赛项理解','方案设计','原型开发','作品打磨','模拟答辩','赛后复盘'].map((item,index) => <span key={item} className={index === 3 ? 'active' : ''}><i>{index + 1}</i>{item}</span>)}</div>
     {error && <p className="empty-state">{error}</p>}
     {loading && <p className="empty-state">任务加载中…</p>}
-    <div className="board-layout"><div className="kanban-board">{columns.map((column) => <section className={`kanban-column ${column.tone}`} key={column.label}><header><h2>{column.label}</h2><span>{column.items.length}</span></header>{column.items.map((item) => <article className={`kanban-card ${item.done ? "done" : ""}`} key={item.id}>
-      <button className="kanban-card-main" onClick={() => toggleDone(item)}><strong>{item.title}</strong><p>关联 {item.scorePointCount} 个评分点</p><small><Clock size={14} />{item.due}</small></button>
-      <button className="kanban-del" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); removeTask(item); }}><X size={15} /></button>
-    </article>)}<button className="add-task" onClick={() => createTask(statusKeyOf(column.label))}><Plus size={16} />新建任务</button></section>)}</div><aside className="board-summary"><section className="module-panel"><h2>评分点覆盖</h2><div className="coverage-big"><strong>{covCovered}</strong><span>/{covTotal}</span></div><div className="progress-line"><i style={{ width: `${covRate}%` }} /></div><p><span>已覆盖 {covCovered}</span><span>未覆盖 {covTotal - covCovered}</span></p></section><section className="module-panel warning-box"><h2><WarningCircle size={21} />风险预警</h2><strong>展示材料缺少应用成效证据</strong><p>可能影响“应用成效”评分点得分。</p><button onClick={() => onToast("已定位到应用成效修改任务")}>去处理<ArrowRight size={15} /></button></section></aside></div>
+    <div className="board-layout"><div className="kanban-board">{columns.map((column) => <section className={`kanban-column ${column.tone}`} key={column.label}><header><h2>{column.label}</h2><span>{column.items.length}</span></header>{column.items.map((item) => {
+      const back = TASK_BACK[item.status];
+      const fwd = TASK_FORWARD[item.status];
+      const fwdLabel = typeof TASK_FWD_LABEL[item.status] === "string" ? TASK_FWD_LABEL[item.status] : (TASK_FWD_LABEL[item.status]?.[role] || null);
+      const canReject = role === "TEACHER" && item.status === "IN_REVIEW";
+      return <article className={`kanban-card ${item.done ? "done" : ""}`} key={item.id}>
+        <div className="kanban-card-body">
+          <strong>{item.title}</strong>
+          <p>关联 {item.scorePointCount} 个评分点</p>
+          <small><Clock size={14} />{item.due}</small>
+        </div>
+        <div className="kanban-actions">
+          {fwdLabel && <button className="kanban-advance" onClick={() => setStatus(item, fwd)}>{fwdLabel}</button>}
+          {canReject && <button className="kanban-reject" onClick={() => setStatus(item, "NEEDS_FIX")}>需修改</button>}
+          {back && <button className="kanban-back" onClick={() => setStatus(item, back)}>退回</button>}
+          <button className="kanban-del" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); removeTask(item); }}><X size={15} /></button>
+        </div>
+      </article>;
+    })}<button className="add-task" onClick={() => createTask(statusKeyOf(column.label))}><Plus size={16} />新建任务</button></section>)}</div><aside className="board-summary"><section className="module-panel"><h2>评分点覆盖</h2><div className="coverage-big"><strong>{covCovered}</strong><span>/{covTotal}</span></div><div className="progress-line"><i style={{ width: `${covRate}%` }} /></div><p><span>已覆盖 {covCovered}</span><span>未覆盖 {covTotal - covCovered}</span></p></section><section className="module-panel warning-box"><h2><WarningCircle size={21} />风险预警</h2><strong>展示材料缺少应用成效证据</strong><p>可能影响“应用成效”评分点得分。</p><button onClick={() => onToast("已定位到应用成效修改任务")}>去处理<ArrowRight size={15} /></button></section></aside></div>
   </section>;
 }
 
@@ -314,9 +394,9 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
   const criterionCount = findings.length ? new Set(findings.map((f) => f.criterion)).size : 0;
 
   return <section className="module-page">
-    <PageIntro icon={MonitorPlay} title="作品诊断中心" description="上传作品并由智能体对照评分标准逐项诊断，输出匹配度、问题与修改建议。" action={<label className="page-primary upload-label"><CloudArrowUp size={19} />{busy ? "处理中…" : "上传作品"}<input type="file" hidden onChange={onFile} disabled={busy} /></label>} />
+    <PageIntro icon={MonitorPlay} title="作品诊断中心" description="上传作品并由智能体对照评分标准逐项诊断，输出匹配度、问题与修改建议。" action={<label className="page-primary upload-label"><CloudArrowUp size={19} />{busy ? "处理中…" : "上传作品"}<input type="file" accept=".doc,.docx,.pdf,.txt" hidden onChange={onFile} disabled={busy} /></label>} />
     {error && <p className="empty-state">{error}</p>}
-    {!version && <p className="empty-state">尚未上传作品。点击右上角“上传作品”开始诊断（文本类材料如 .txt/.md 可被解析并对照评分点）。</p>}
+    {!version && <p className="empty-state">尚未上传作品。点击右上角“上传作品”开始诊断（支持 DOC / DOCX / PDF / TXT，系统将自动抽取文本并对照评分点）。</p>}
     {version && <div className="diagnosis-meta">当前作品：第 {version.version} 版 · 共 {findings.length} 条诊断 · 覆盖 {criterionCount} 个评分要素</div>}
     <div className="diagnosis-grid">
       <section className="diagnosis-source">
@@ -354,6 +434,10 @@ function DefensePage({ onToast }) {
   const [sessions, setSessions] = useState([]);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  // 语音输入相关状态（录音 → 调线上 ASR → 回填作答文本）
+  const [recording, setRecording] = useState(false);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const loadSessions = async () => {
     try { setSessions(await api.defense.list(PROJECT_ID)); } catch { /* ignore */ }
@@ -386,6 +470,45 @@ function DefensePage({ onToast }) {
 
   const submitComment = () => { onToast(comment.trim() ? "教师补充评价已提交" : "请先填写补充评价"); if (comment.trim()) setComment(""); };
 
+  // 录音并转写：MediaRecorder 采集 → 调 /speech/transcribe → 回填作答
+  const startRecording = async () => {
+    if (DEMO_MODE) { onToast("演示模式：语音输入需连接后端并在设置中心配置 ASR"); return; }
+    if (recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        if (!blob.size) { onToast("录音为空，请重试"); return; }
+        try {
+          setBusy(true);
+          const data = await api.speech.transcribe(blob);
+          setAnswer((prev) => (prev && prev.trim() ? `${prev}\n${data.transcript}` : data.transcript));
+          onToast("语音已转为文字并填入作答");
+        } catch (e) {
+          onToast(e?.message || "语音识别失败");
+        } finally {
+          setBusy(false);
+        }
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch (e) {
+      onToast("无法访问麦克风：" + (e?.message || e));
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && recording) {
+      recorderRef.current.stop();
+      setRecording(false);
+    }
+  };
+
   if (DEMO_MODE) {
     return <section className="module-page">
       <PageIntro icon={BookOpenText} title="模拟答辩室" description="围绕未闭环评分点自动追问，并将回答质量回写为训练建议。" action={<StatusTag tone="orange">第 2 轮追问 · 02:36</StatusTag>} />
@@ -417,11 +540,15 @@ function DefensePage({ onToast }) {
     {session && !done && (
       <section className="module-panel teacher-comment">
         <h2>学生作答</h2>
-        <textarea aria-label="学生作答" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="请输入对评委提问的回答……" />
+        <textarea aria-label="学生作答" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="请输入对评委提问的回答……（也可点击麦克风语音输入）" />
         <div className="parse-actions">
+          <button className={`page-primary ${recording ? "recording" : ""}`} onClick={recording ? stopRecording : startRecording} disabled={busy && !recording}>
+            <Microphone size={17} />{recording ? "停止录音" : "语音输入"}
+          </button>
           <button className="page-primary" onClick={submitAnswer} disabled={busy}>{busy ? "提交中…" : "提交作答"}</button>
           <button className="secondary-button" onClick={() => setSession(null)}>返回列表</button>
         </div>
+        {recording && <p className="recording-hint">录音中…松开麦克风结束并自动转写。</p>}
       </section>
     )}
     {session && (
@@ -434,10 +561,45 @@ function DefensePage({ onToast }) {
   </section>;
 }
 
+// 案例沉淀演示数据（DEMO 模式下回退，保证页面有真实感内容）
+const DEMO_CASE_LIB = {
+  templates: [
+    { title: "技术应用与创新（40%）", weight: 40, points: ["技术选型合理性", "系统架构完整性", "创新点价值"] },
+    { title: "工程实现与质量（35%）", weight: 35, points: ["代码规范", "功能完成度", "测试覆盖"] },
+    { title: "应用成效（25%）", weight: 25, points: ["场景契合度", "应用效果与性能", "可推广性"] },
+  ],
+  issues: [
+    { name: "应用效果与性能", count: 6, high: 4, samples: ["缺少前后对比数据，无法证明应用成效", "测试样本说明不足，统计口径未定义"] },
+    { name: "创新点价值", count: 4, high: 1, samples: ["创新点与已有方案区分度不足，需补充对比论证"] },
+    { name: "系统架构完整性", count: 2, high: 0, samples: ["模块边界不清晰，缺少异常处理分支"] },
+  ],
+  goodPractices: [
+    { id: "g1", title: "对照实验设计范例", content: "采用 A/B 对照说明系统前后的效率提升，附样本量、统计口径与置信区间，证据链完整。", category: "应用成效", tags: ["证据", "对照"] },
+    { id: "g2", title: "异常场景处理清单", content: "针对高并发与弱网场景补充降级策略与重试机制，并写入测试案例库。", category: "工程质量", tags: ["异常", "测试"] },
+  ],
+};
+
+function CaseSection({ open, onToggle, icon: Icon, title, desc, tone, children }) {
+  return (
+    <div className={`case-block ${open ? "open" : ""}`}>
+      <button className="case-head" onClick={onToggle} aria-expanded={open}>
+        <Icon size={28} weight="duotone" />
+        <span className="case-head-text"><strong>{title}</strong><small>{desc}</small></span>
+        <span className={`case-toggle ${tone}`}>{open ? "收起" : "展开"}</span>
+      </button>
+      {open && <div className="case-body">{children}</div>}
+    </div>
+  );
+}
+
 function ReviewPage({ projectId, onToast }) {
   const [summary, setSummary] = useState(DEMO_MODE ? null : null);
   const [loading, setLoading] = useState(!DEMO_MODE);
   const [error, setError] = useState("");
+  const [caseLib, setCaseLib] = useState(DEMO_MODE ? DEMO_CASE_LIB : null);
+  const [caseError, setCaseError] = useState("");
+  const [caseOpen, setCaseOpen] = useState({ templates: true, issues: true, good: true });
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (DEMO_MODE) return undefined;
@@ -450,6 +612,19 @@ function ReviewPage({ projectId, onToast }) {
       if (active) setError(err?.message || "复盘数据加载失败");
     }).finally(() => {
       if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (DEMO_MODE) return undefined;
+    let active = true;
+    api.review.caseLibrary(projectId).then((data) => {
+      if (active) setCaseLib(data);
+    }).catch((err) => {
+      if (active) setCaseError(err?.message || "案例沉淀加载失败");
     });
     return () => {
       active = false;
@@ -475,12 +650,109 @@ function ReviewPage({ projectId, onToast }) {
     [BookOpenText, "答辩轮次", `${metrics.defenseRounds} 个`, "violet"],
   ];
 
+  // 组装复盘报告 Markdown（供复制 / 导出）
+  const buildReportMarkdown = () => {
+    const L = [];
+    L.push("# 赛后复盘报告");
+    L.push("\n## 一、关键指标");
+    L.push(`- 训练任务：${metrics.taskCount} 个`);
+    L.push(`- 作品版本：${metrics.workVersions} 个`);
+    L.push(`- 问题关闭：${metrics.issuesClosed} 个`);
+    L.push(`- 答辩轮次：${metrics.defenseRounds} 个`);
+    L.push(`- 评分覆盖率：${coverage.coverageRate}%（${coverage.coveredScorePoints}/${coverage.totalScorePoints}）`);
+    L.push("\n## 二、能力成长");
+    growth.forEach((g) => L.push(`- ${g.label}：${g.value}`));
+    L.push("\n## 三、有效做法");
+    report.effective.forEach((t) => L.push(`- ${t}`));
+    L.push("\n## 四、主要短板");
+    report.shortcomings.forEach((t) => L.push(`- ${t}`));
+    L.push("\n## 五、下一轮建议");
+    report.suggestions.forEach((t) => L.push(`- ${t}`));
+    if (caseLib) {
+      L.push("\n## 六、案例沉淀");
+      L.push("\n### 1. 赛项模板");
+      (caseLib.templates || []).forEach((t) => L.push(`- ${t.title}（权重 ${t.weight}）：${(t.points || []).join("、")}`));
+      L.push("\n### 2. 典型问题");
+      (caseLib.issues || []).forEach((i) => L.push(`- ${i.name}：累计 ${i.count} 次（高/严重 ${i.high}）`));
+      L.push("\n### 3. 优秀做法");
+      (caseLib.goodPractices || []).forEach((g) => L.push(`- ${g.title}：${g.content}`));
+    }
+    return L.join("\n");
+  };
+
+  const copyReport = async () => {
+    const md = buildReportMarkdown();
+    try {
+      await navigator.clipboard.writeText(md);
+      onToast("复盘报告已复制为 Markdown");
+    } catch {
+      onToast("复制失败，请检查浏览器剪贴板权限");
+    }
+  };
+
+  const exportReport = () => {
+    setExporting(true);
+    try {
+      const md = buildReportMarkdown();
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "赛后复盘报告.md";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      onToast("复盘报告已导出（.md）");
+    } catch {
+      onToast("导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const refresh = () => {
+    if (DEMO_MODE) { onToast("复盘报告已生成"); return; }
+    setLoading(true);
+    setError("");
+    api.review.summary(projectId).then(setSummary).catch((err) => onToast(err?.message || "刷新失败")).finally(() => setLoading(false));
+  };
+
+  const toggleCase = (key) => setCaseOpen((cur) => ({ ...cur, [key]: !cur[key] }));
+
   return <section className="module-page">
-    <PageIntro icon={Medal} title="赛后复盘" description="汇总训练过程、能力成长与关键问题，沉淀为下一轮可复用的备赛资产。" action={<button className="page-primary" onClick={() => { if (DEMO_MODE) onToast("复盘报告已生成"); else { setLoading(true); api.review.summary(projectId).then(setSummary).catch((err) => onToast(err?.message || "刷新失败")).finally(() => setLoading(false)); } }}>{loading ? "生成中…" : "生成复盘报告"}</button>} />
+    <PageIntro icon={Medal} title="赛后复盘" description="汇总训练过程、能力成长与关键问题，沉淀为下一轮可复用的备赛资产。" action={<button className="page-primary" onClick={refresh}>{loading ? "生成中…" : "生成复盘报告"}</button>} />
     {loading && <p className="empty-state">正在汇总复盘数据…</p>}
     {error && <p className="empty-state">{error}</p>}
-    {!loading && <><div className="review-metrics">{metricCards.map(([Icon,label,value,tone]) => <article className={tone} key={label}><Icon size={34} weight="duotone" /><span><small>{label}</small><strong>{value}</strong></span></article>)}</div><div className="review-grid"><section className="module-panel growth-panel"><h2>能力成长记录</h2>{growth.map(({label, value}) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}</strong></div>)}<h3>评分覆盖率</h3><div className="ability-row"><span>已覆盖 {coverage.coveredScorePoints}/{coverage.totalScorePoints}</span><div><i style={{width:`${coverage.coverageRate}%`}} /></div><strong>{coverage.coverageRate}%</strong></div></section><section className="module-panel report-panel"><h2>赛后复盘报告</h2>{[[CheckCircle,"有效做法",report.effective,"green"],[WarningCircle,"主要短板",report.shortcomings,"orange"],[TrendUp,"下一轮建议",report.suggestions,"blue"]].map(([Icon,title,items,tone]) => <article className={tone} key={title}><Icon size={27} weight="duotone" /><div><strong>{title}</strong>{items.map((text,index) => <p key={index}>{text}</p>)}</div></article>)}</section></div></>}
-    <section className="module-panel case-library"><h2>案例沉淀</h2>{[[FileDoc,"赛项模板","沉淀可复用的赛项分析模板"],[Lightbulb,"典型问题","汇总高频问题与解决思路"],[Medal,"优秀做法","沉淀优秀做法与参考案例"]].map(([Icon,title,desc]) => <button key={title} onClick={() => onToast(`已打开：${title}`)}><Icon size={30} weight="duotone" /><span><strong>{title}</strong><small>{desc}</small></span><ArrowRight size={18} /></button>)}</section>
+    {!loading && <><div className="review-metrics">{metricCards.map(([Icon,label,value,tone]) => <article className={tone} key={label}><Icon size={34} weight="duotone" /><span><small>{label}</small><strong>{value}</strong></span></article>)}</div><div className="review-grid"><section className="module-panel growth-panel"><h2>能力成长记录</h2>{growth.map(({label, value}) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}</strong></div>)}<h3>评分覆盖率</h3><div className="ability-row"><span>已覆盖 {coverage.coveredScorePoints}/{coverage.totalScorePoints}</span><div><i style={{width:`${coverage.coverageRate}%`}} /></div><strong>{coverage.coverageRate}%</strong></div></section><section className="module-panel report-panel"><h2>赛后复盘报告<div className="report-actions"><button className="secondary-button" onClick={copyReport}>复制</button><button className="secondary-button" onClick={exportReport} disabled={exporting}>{exporting ? "导出中…" : "导出 .md"}</button></div></h2>{[[CheckCircle,"有效做法",report.effective,"green"],[WarningCircle,"主要短板",report.shortcomings,"orange"],[TrendUp,"下一轮建议",report.suggestions,"blue"]].map(([Icon,title,items,tone]) => <article className={tone} key={title}><Icon size={27} weight="duotone" /><div><strong>{title}</strong>{items.map((text,index) => <p key={index}>{text}</p>)}</div></article>)}</section></div></>}
+    <section className="module-panel case-library">
+      <h2>案例沉淀</h2>
+      {caseError && <p className="empty-state">{caseError}</p>}
+      <CaseSection open={caseOpen.templates} onToggle={() => toggleCase("templates")} icon={FileDoc} title="赛项模板" desc="沉淀可复用的赛项分析模板与评分要素" tone="blue">
+        <ul className="case-list">
+          {(caseLib?.templates || []).map((t, i) => (
+            <li key={i}><strong>{t.title}</strong>{t.weight != null && <span className="case-weight">权重 {t.weight}</span>}<div className="case-points">{(t.points || []).map((p, j) => <em key={j}>{p}</em>)}</div></li>
+          ))}
+          {(caseLib?.templates || []).length === 0 && <li className="empty-state">暂无赛项模板</li>}
+        </ul>
+      </CaseSection>
+      <CaseSection open={caseOpen.issues} onToggle={() => toggleCase("issues")} icon={Lightbulb} title="典型问题" desc="汇总高频问题与解决思路" tone="orange">
+        <ul className="case-list">
+          {(caseLib?.issues || []).map((it, i) => (
+            <li key={i}><strong>{it.name}</strong><span className={`case-count ${it.high > 0 ? "high" : ""}`}>累计 {it.count} 次{it.high > 0 ? ` · 高/严重 ${it.high}` : ""}</span>{(it.samples || []).map((s, j) => <p key={j} className="case-sample">样例：{s}</p>)}</li>
+          ))}
+          {(caseLib?.issues || []).length === 0 && <li className="empty-state">暂无典型问题</li>}
+        </ul>
+      </CaseSection>
+      <CaseSection open={caseOpen.good} onToggle={() => toggleCase("good")} icon={Medal} title="优秀做法" desc="沉淀优秀做法与参考案例" tone="green">
+        <ul className="case-list">
+          {(caseLib?.goodPractices || []).map((g, i) => (
+            <li key={g.id || i}><strong>{g.title}</strong>{g.category && <span className="case-weight">{g.category}</span>}<p>{g.content}</p>{(g.tags || []).map((t2, j) => <em key={j} className="case-tag">{t2}</em>)}</li>
+          ))}
+          {(caseLib?.goodPractices || []).length === 0 && <li className="empty-state">暂无优秀做法沉淀</li>}
+        </ul>
+      </CaseSection>
+    </section>
   </section>;
 }
 
@@ -498,7 +770,8 @@ function ResourcesPage({ projectId, onToast }) {
     setLoading(true);
     setError("");
     api.resources.list(projectId).then((data) => {
-      setItems(Array.isArray(data) ? data : []);
+      // 后端返回分页对象 { items, total, page, pageSize }，需取 items
+      setItems(Array.isArray(data) ? data : (data?.items ?? []));
     }).catch((err) => {
       setError(err?.message || "资源加载失败");
     }).finally(() => setLoading(false));
@@ -649,6 +922,19 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
   const [pwd, setPwd] = useState({ old: "", next: "", confirm: "" });
   const [preferences, setPreferences] = useState({ task: true, review: true, risk: true });
   const toggle = (key) => setPreferences((current) => ({...current, [key]: !current[key]}));
+  // 语音识别（ASR）配置：与 Tenant.settings 字段对应，仅保存非空值
+  const [asr, setAsr] = useState({ asrApiKey: "", asrEndpoint: "", asrHeaderName: "", asrAuthScheme: "", asrField: "" });
+  const [asrSaving, setAsrSaving] = useState(false);
+  const asrFromSettings = (settings) => {
+    const s = (settings && typeof settings === "object") ? settings : {};
+    return {
+      asrApiKey: s.asrApiKey || "",
+      asrEndpoint: s.asrEndpoint || "",
+      asrHeaderName: s.asrHeaderName || "",
+      asrAuthScheme: s.asrAuthScheme || "",
+      asrField: s.asrField || "",
+    };
+  };
   // 当前账号可切换的全部团队（含 isActive 标记）
   const [myTeams, setMyTeams] = useState(DEMO_MODE ? [{ tenantId: "demo-tenant", name: "智造先锋队（演示）", isActive: true }, { tenantId: "innovation-tenant", name: "创新实验队（演示）", isActive: false }] : []);
   const [switching, setSwitching] = useState(false);
@@ -661,6 +947,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
         if (!active) return;
         setTenant(t);
         setTeamName(t.name);
+        setAsr(asrFromSettings(t?.settings));
         setMembers(Array.isArray(m) ? m : []);
         setMyTeams(Array.isArray(list) ? list : []);
       })
@@ -675,6 +962,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       const [t, m] = await Promise.all([api.tenants.me(), api.tenants.members()]);
       setTenant(t);
       setTeamName(t.name);
+      setAsr(asrFromSettings(t?.settings));
       setMembers(Array.isArray(m) ? m : []);
     } catch {
       /* ignore */
@@ -772,6 +1060,23 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
 
   const memberLabel = (role) => ({ OWNER: "负责人", TEACHER: "指导教师", STUDENT: "学生", MEMBER: "成员" }[role] ?? role);
 
+  // 保存语音识别（ASR）配置：仅提交非空字段，与 Tenant.settings 合并
+  const saveAsr = async () => {
+    if (DEMO_MODE) { onToast("演示模式：未连接后端，ASR 配置未保存"); return; }
+    const payload = {};
+    Object.entries(asr).forEach(([k, v]) => { if (v && String(v).trim()) payload[k] = v; });
+    if (!payload.asrApiKey || !payload.asrEndpoint) { onToast("请至少填写 ASR API Key 与接口地址"); return; }
+    setAsrSaving(true);
+    try {
+      await api.tenants.updateSettings(payload);
+      onToast("语音识别（ASR）配置已保存");
+    } catch (err) {
+      onToast(err?.message || "保存失败");
+    } finally {
+      setAsrSaving(false);
+    }
+  };
+
   return <section className="module-page"><PageIntro icon={GearSix} title="设置中心" description="管理团队、成员与账号安全。" /><div className="settings-layout">
     <section className="module-panel account-settings">
       <h2>账号信息</h2>
@@ -824,11 +1129,22 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       {[["task","任务到期提醒","任务截止前 24 小时提醒"],["review","学生提交提醒","学生提交作品或修改结果时提醒"],["risk","风险预警提醒","发现高风险评分点时提醒"]].map(([key,title,desc]) => <button key={key} className="preference-row" onClick={() => toggle(key)}><span><strong>{title}</strong><small>{desc}</small></span><i className={preferences[key] ? 'on' : ''}><b /></i></button>)}
       <button className="page-primary save-settings" onClick={() => onToast("通知偏好已保存")}>保存设置</button>
     </section>
+
+    <section className="module-panel asr-settings">
+      <h2>语音识别（ASR）配置</h2>
+      <p className="muted small">用于模拟答辩"语音输入"：密钥仅保存在后端，不会下发到学生作答界面。配置后学生发声作答可自动转写为文字。</p>
+      <label className="field-row"><span>ASR API Key</span><input type="password" value={asr.asrApiKey} onChange={(e) => setAsr((c) => ({ ...c, asrApiKey: e.target.value }))} placeholder="线上 ASR 服务密钥" aria-label="ASR API Key" /></label>
+      <label className="field-row"><span>ASR 接口地址</span><input value={asr.asrEndpoint} onChange={(e) => setAsr((c) => ({ ...c, asrEndpoint: e.target.value }))} placeholder="https://.../asr" aria-label="ASR 接口地址" /></label>
+      <label className="field-row"><span>鉴权头名称</span><input value={asr.asrHeaderName} onChange={(e) => setAsr((c) => ({ ...c, asrHeaderName: e.target.value }))} placeholder="默认 Authorization" aria-label="鉴权头名称" /></label>
+      <label className="field-row"><span>鉴权头前缀</span><input value={asr.asrAuthScheme} onChange={(e) => setAsr((c) => ({ ...c, asrAuthScheme: e.target.value }))} placeholder="默认 Bearer" aria-label="鉴权头前缀" /></label>
+      <label className="field-row"><span>音频字段名</span><input value={asr.asrField} onChange={(e) => setAsr((c) => ({ ...c, asrField: e.target.value }))} placeholder="默认 audio" aria-label="音频字段名" /></label>
+      <button className="page-primary save-settings" onClick={saveAsr} disabled={asrSaving}>{asrSaving ? "保存中…" : "保存 ASR 配置"}</button>
+    </section>
   </div></section>;
 }
 
 export function WorkspacePage({ pageKey, projectId, user, activeTenantId, onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant }) {
-  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant };
+  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant, user };
   const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage, 'student-tasks': StudentTasksPage, 'student-works': StudentWorksPage, 'student-diagnosis': StudentDiagnosisPage, 'student-defense': StudentDefensePage };
   const Page = pages[pageKey] ?? AnalysisPage;
   if (pageKey === "review" || pageKey === "resources" || pageKey === "learning") {

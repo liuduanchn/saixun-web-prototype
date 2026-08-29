@@ -9,6 +9,7 @@ import { BadRequestException } from '@nestjs/common';
 const SwitchSchema = z.object({ tenantId: z.string().min(1) });
 const RenameSchema = z.object({ name: z.string().min(1) });
 const CreateSchema = z.object({ name: z.string().min(1) });
+const SettingsSchema = z.record(z.unknown());
 const AddMemberSchema = z.object({
   username: z.string().min(1),
   role: z.enum(['OWNER', 'TEACHER', 'STUDENT', 'MEMBER']).optional(),
@@ -48,6 +49,14 @@ export class TenantsController {
     const dto = RenameSchema.safeParse(body);
     if (!dto.success) throw new BadRequestException('团队名称不能为空');
     return this.tenants.rename(dto.data.name, user);
+  }
+
+  /** 更新团队级配置（名称之外的 JSON 配置，如 ASR 语音识别密钥） */
+  @Patch('me/settings')
+  updateSettings(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    const dto = SettingsSchema.safeParse(body);
+    if (!dto.success) throw new BadRequestException('配置格式不正确');
+    return this.tenants.updateSettings(dto.data, user);
   }
 
   @Get('members')

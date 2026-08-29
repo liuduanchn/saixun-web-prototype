@@ -87,6 +87,63 @@ export class ReviewService {
     };
   }
 
+  /**
+   * 案例沉淀：聚合赛项模板（评分要素）、典型问题（诊断问题高频评分点）、优秀做法（案例库）。
+   * 供赛后复盘"案例沉淀"三板块展开真实内容。
+   */
+  async caseLibrary(projectId: string, user: JwtPayload) {
+    await this.assertProjectTenant(projectId, user.tenantId);
+
+    // 赛项模板：本赛项评分要素 + 评分点
+    const criteria = await this.prisma.criterion.findMany({
+      where: { projectId },
+      include: { scorePoints: true },
+      orderBy: { id: 'asc' },
+    });
+    const templates = criteria.map((c) => ({
+      title: c.name,
+      weight: c.weight,
+      points: c.scorePoints.map((sp) => sp.name),
+    }));
+
+    // 典型问题：按评分点聚合诊断问题，取频次最高者
+    const diagnoses = await this.prisma.diagnosis.findMany({
+      where: { workVersion: { projectId } },
+      select: { scorePoint: { select: { name: true } }, severity: true, issues: true },
+      orderBy: { createdAt: 'desc' },
+      take: 300,
+    });
+    const issueMap = new Map<string, { name: string; count: number; high: number; samples: string[] }>();
+    for (const d of diagnoses) {
+      const name = d.scorePoint?.name || '未关联评分点';
+      const entry = issueMap.get(name) || { name, count: 0, high: 0, samples: [] as string[] };
+      entry.count += 1;
+      if (d.severity === 'HIGH' || d.severity === 'CRITICAL') entry.high += 1;
+      if (entry.samples.length < 2 && d.issues) entry.samples.push(d.issues);
+      issueMap.set(name, entry);
+    }
+    const issues = [...issueMap.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map((e) => ({ name: e.name, count: e.count, high: e.high, samples: e.samples }));
+
+    // 优秀做法：本租户案例库
+    const cases = await this.prisma.caseLibrary.findMany({
+      where: { tenantId: user.tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+    });
+    const goodPractices = cases.map((c) => ({
+      id: c.id,
+      title: c.title,
+      content: c.content,
+      category: c.category,
+      tags: c.tags,
+    }));
+
+    return { templates, issues, goodPractices };
+  }
+
   private buildReport(d: {
     taskCount: number;
     workVersions: number;

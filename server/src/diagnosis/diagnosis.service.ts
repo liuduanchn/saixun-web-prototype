@@ -14,6 +14,7 @@ import { LearningService } from '../learning/learning.service';
 import { CaseLibraryService } from '../case-library/case-library.service';
 import { Severity, DiagnosisStatus } from '@prisma/client';
 import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
+import { extractText } from '../common/text-extract';
 
 interface Finding {
   index?: number;
@@ -46,12 +47,12 @@ export class DiagnosisService {
     return wv;
   }
 
-  /** 读取作品文本内容（仅文本类且 <512KB；否则返回空串，由模型/启发式兜底） */
+  /** 读取作品文本内容：优先使用上传时抽取的 content；否则读取文件并按类型解析（doc/docx/pdf/txt） */
   private async readText(fileRef: string): Promise<string> {
     try {
       const buf = await this.storage.read(fileRef);
-      if (buf.length > 512 * 1024) return '';
-      return buf.toString('utf8');
+      if (buf.length > 2 * 1024 * 1024) return '';
+      return await extractText({ buffer: buf });
     } catch {
       return '';
     }
@@ -67,7 +68,7 @@ export class DiagnosisService {
     if (points.length === 0)
       throw new BadRequestException('该项目尚无评分点，请先在赛项解析中配置评分标准');
 
-    const content = await this.readText(wv.fileRef);
+    const content = (wv.content && wv.content.trim()) || (await this.readText(wv.fileRef));
 
     // RAG 检索增强：从案例沉淀库召回与作品内容最相关的 top-K 案例，注入诊断 prompt
     const relevantCases = await this.cases.search(user.tenantId, content.slice(0, 2000), 5);

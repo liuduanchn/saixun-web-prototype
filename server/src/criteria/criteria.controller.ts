@@ -1,7 +1,23 @@
-import { Controller, Get, Post, Delete, Query, Body, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Query,
+  Body,
+  Param,
+  UseInterceptors,
+  UseFilters,
+  UploadedFile,
+  BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as multer from 'multer';
 import { CriteriaService, CriterionDraft } from './criteria.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
+import { MAX_FILE_SIZE } from '../storage/file-policy';
+import { FileUploadFilter } from '../storage/multer-exception.filter';
 
 @Controller('criteria')
 export class CriteriaController {
@@ -16,6 +32,26 @@ export class CriteriaController {
   @Post('parse')
   parse(@Body('text') text: string, @CurrentUser() user: JwtPayload) {
     return this.criteria.parse(text, user);
+  }
+
+  /** 赛项解析（文件版）：上传规程文件（DOC/DOCX/PDF/TXT）-> 抽取文本 -> 结构化草稿 */
+  @Post('parse-file')
+  @UseFilters(FileUploadFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_FILE_SIZE },
+    }),
+  )
+  parseFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('projectId') projectId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    if (!projectId) throw new BadRequestException('projectId 必填');
+    if (!file || !file.buffer || file.buffer.length === 0)
+      throw new BadRequestException('未接收到文件或文件为空');
+    return this.criteria.parseFile(file, user);
   }
 
   /** 教师确认：将草稿落库为评分要素 + 评分点 */

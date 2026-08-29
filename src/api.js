@@ -183,6 +183,9 @@ export const api = {
         body: { name },
       });
     },
+    updateSettings(settings) {
+      return request("/tenants/me/settings", { method: "PATCH", body: settings });
+    },
     switch(tenantId) {
       return request("/tenants/switch", {
         method: "POST",
@@ -285,6 +288,15 @@ export const api = {
         body: { projectId, draft },
       });
     },
+    parseFile(projectId, file) {
+      const form = new FormData();
+      form.append("file", file);
+      return request(`/criteria/parse-file?projectId=${encodeURIComponent(projectId)}`, {
+        method: "POST",
+        body: form,
+        isForm: true,
+      });
+    },
     remove(id) {
       return request(`/criteria/${id}`, { method: "DELETE" });
     },
@@ -317,6 +329,13 @@ export const api = {
       return request("/projects");
     },
   },
+  speech: {
+    transcribe(file) {
+      const form = new FormData();
+      form.append("audio", file);
+      return request("/speech/transcribe", { method: "POST", body: form, isForm: true });
+    },
+  },
   resources: {
     list(projectId) {
       return request(`/resources?projectId=${encodeURIComponent(projectId)}`);
@@ -343,6 +362,9 @@ export const api = {
   review: {
     summary(projectId) {
       return request(`/review/summary?projectId=${encodeURIComponent(projectId)}`);
+    },
+    caseLibrary(projectId) {
+      return request(`/review/case-library?projectId=${encodeURIComponent(projectId)}`);
     },
   },
   learning: {

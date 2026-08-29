@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface';
 import { assertFileAllowed } from '../storage/file-policy';
+import { extractText } from '../common/text-extract';
 import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 import { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -40,6 +41,19 @@ export class WorksService {
       throw new BadRequestException('未接收到文件或文件为空');
     assertFileAllowed(file);
 
+    // 抽取文件纯文本（doc/docx/pdf/txt），供诊断比对；抽取失败直接拒绝上传
+    let content = '';
+    try {
+      content = await extractText({
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        filename: file.originalname,
+      });
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      throw new BadRequestException(`无法解析文件内容：${(e as Error).message || '不支持的文件'}`);
+    }
+
     const stored = await this.storage.upload({
       buffer: file.buffer,
       filename: file.originalname,
@@ -56,7 +70,7 @@ export class WorksService {
     const version = (last?.version ?? 0) + 1;
 
     const wv = await this.prisma.workVersion.create({
-      data: { projectId, uploaderId: user.sub, fileRef: stored.key, version },
+      data: { projectId, uploaderId: user.sub, fileRef: stored.key, content, version },
       include: { uploader: { select: { id: true, name: true } } },
     });
 

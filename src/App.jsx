@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell, BookOpenText, CaretDown, CaretRight, ChartDonut, Check, CheckCircle,
   ClipboardText, Clock, Cube, FileText, GearSix, House, ListChecks,
@@ -180,11 +180,12 @@ export function App() {
     };
   }, [user, selectedProjectId]);
 
-  const showToast = (message) => {
+  // 用 useCallback 稳定引用：否则每次渲染都生成新的 onToast，传入子页面的 useEffect 会因依赖变化而无限重跑（表现为页面一直在刷新）。
+  const showToast = useCallback((message) => {
     setToast(message);
     window.clearTimeout(window.__saixunToastTimer);
     window.__saixunToastTimer = window.setTimeout(() => setToast(""), 2600);
-  };
+  }, []);
 
   const createRevisionTask = async () => {
     if (created) {
