@@ -220,6 +220,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
 .session-resume small { color: #8fa4bc; font-size: 11px; }
 .session-del { flex: 0 0 auto; width: 42px; display: grid; place-items: center; border: 1px solid #1f466e; background: #08233f; border-radius: 9px; color: #8fa4bc; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
 .session-del:hover { background: #2a1622; border-color: #5a2a3a; color: #ff8a80; }
+.session-ops { display: flex; flex-direction: column; gap: 6px; }
+.session-rename { flex: 0 0 auto; width: 42px; display: grid; place-items: center; border: 1px solid #1f466e; background: #08233f; border-radius: 9px; color: #8fa4bc; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.session-rename:hover { background: #0a294d; border-color: #2a5a8a; color: #cfe0f5; }
+.session-edit { flex: 1; display: flex; align-items: center; gap: 8px; border: 1px solid #2a5a8a; background: #08233f; border-radius: 9px; padding: 6px 8px; }
+.session-edit input { flex: 1; background: #061a30; border: 1px solid #1f466e; border-radius: 6px; padding: 6px 8px; color: #f4f8ff; font-size: 13px; }
+.session-edit input:focus { outline: none; border-color: #2a5a8a; }
+.session-save { border: 1px solid #2a5a8a; background: #0a294d; color: #cfe0f5; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.session-cancel { border: 1px solid #1f466e; background: transparent; color: #8fa4bc; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
 .defense-session-bar { display: flex; margin-bottom: 14px; }
 .answer-eval { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 12px; color: #475569; }
 .answer-eval span { background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }

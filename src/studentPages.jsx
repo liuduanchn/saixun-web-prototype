@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRight, Brain, CheckCircle, CloudArrowUp, MonitorPlay, SealCheck, Student,
+  ArrowRight, Brain, CheckCircle, CloudArrowUp, Microphone, MonitorPlay, SealCheck, Student,
 } from "@phosphor-icons/react";
-import { api, DEMO_MODE } from "./api.js";
+import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
+// 演示模式共享上下文：与教师端 demo 项目 / 人员保持一致
+const DEMO_PROJECT_NAME = "AI应用开发赛";
+const DEMO_STUDENT = "王同学";
+import { recordingToWav } from "./audio.js";
 
 const severityTone = (s) => ({ LOW: "green", MEDIUM: "blue", HIGH: "orange", CRITICAL: "red" }[s] || "blue");
 const severityLabel = (s) => ({ LOW: "低", MEDIUM: "中", HIGH: "高", CRITICAL: "严重" }[s] || s);
@@ -17,9 +21,9 @@ function PageIntro({ icon: Icon, title, description }) {
 }
 
 const demoTasks = [
-  { id: "d1", title: "补充应用成效对比数据", status: "NEEDS_FIX", done: false, dueDate: "2026-08-25", owner: { name: "我" } },
-  { id: "d2", title: "完善统计口径说明", status: "TODO", done: false, dueDate: "2026-08-26", owner: { name: "我" } },
-  { id: "d3", title: "整理应用场景与价值说明", status: "DONE", done: true, dueDate: "2026-08-22", owner: { name: "我" } },
+  { id: "d1", title: "补充应用成效对比数据", status: "NEEDS_FIX", done: false, dueDate: "2026-08-25", owner: { name: DEMO_STUDENT } },
+  { id: "d2", title: "完善统计口径说明", status: "TODO", done: false, dueDate: "2026-08-26", owner: { name: DEMO_STUDENT } },
+  { id: "d3", title: "整理应用场景与价值说明", status: "DONE", done: true, dueDate: "2026-08-22", owner: { name: DEMO_STUDENT } },
 ];
 const demoWorks = [
   { id: "w1", version: 1, project: { name: "AI应用开发赛" }, uploader: { name: "我" }, createdAt: "2026-08-23T10:00:00Z" },
@@ -55,8 +59,8 @@ export function StudentTasksPage({ projectId, onToast }) {
     <section className="module-page">
       <PageIntro icon={Student} title="我的任务" description="查看指导教师为团队布置的训练任务与修改任务（只读）。" />
       <div className="student-card">
-        {!projectId && <p className="empty-hint">请先在顶部选择赛项查看对应任务。</p>}
-        {projectId && tasks.length === 0 && !loading && <p className="empty-hint">当前赛项暂无任务。</p>}
+        {!projectId && !DEMO_MODE && <p className="empty-hint">请先在顶部选择赛项查看对应任务。</p>}
+        {projectId && tasks.length === 0 && !loading && !DEMO_MODE && <p className="empty-hint">当前赛项暂无任务。</p>}
         <ul className="task-feed">
           {tasks.map((t) => (
             <li key={t.id} className={"feed-row " + (t.done ? "done" : "")}>
@@ -99,7 +103,12 @@ export function StudentWorksPage({ projectId, onToast, onNavigate }) {
   useEffect(load, []);
 
   const upload = async () => {
-    if (DEMO_MODE) { onToast("演示模式：未连接后端，无法上传"); return; }
+    if (DEMO_MODE) {
+      setWorks((list) => [{ id: "demo-w-" + Date.now(), version: list.length + 1, project: { name: DEMO_PROJECT_NAME }, uploader: { name: DEMO_STUDENT }, createdAt: new Date().toISOString() }, ...list]);
+      onToast("作品已提交（演示）");
+      setFile(null);
+      return;
+    }
     if (!projectId) { onToast("请先在顶部选择一个赛项再上传作品"); return; }
     if (!file) { onToast("请选择要上传的作品文件"); return; }
     setSubmitting(true);
@@ -126,7 +135,7 @@ export function StudentWorksPage({ projectId, onToast, onNavigate }) {
       <PageIntro icon={CloudArrowUp} title="我的作品" description="提交你的赛项作品，并针对作品发起 AI 诊断。" />
       <div className="student-card">
         <div className="upload-bar">
-          <span className="upload-project">当前赛项：<strong>{projectId ? "已选择" : "未选择（请在顶部选择）"}</strong></span>
+          <span className="upload-project">当前赛项：<strong>{DEMO_MODE ? DEMO_PROJECT_NAME : (projectId ? "已选择" : "未选择（请在顶部选择）")}</strong></span>
           <input type="file" onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)} aria-label="选择作品文件" />
           <button className="page-primary" onClick={upload} disabled={submitting}>{submitting ? "提交中…" : "上传作品"}</button>
         </div>
@@ -211,6 +220,10 @@ export function StudentDefensePage({ projectId, onToast }) {
   const [selected, setSelected] = useState(DEMO_MODE ? demoSession : null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recognizing, setRecognizing] = useState(false);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const loadList = () => {
     if (DEMO_MODE || !projectId) return;
@@ -219,7 +232,15 @@ export function StudentDefensePage({ projectId, onToast }) {
   useEffect(loadList, [projectId]);
 
   const start = async () => {
-    if (DEMO_MODE) { onToast("演示模式：未连接后端"); return; }
+    if (DEMO_MODE) {
+      setSelected({
+        id: "demo-session-" + Date.now(),
+        transcript: [{ role: "judge", content: "请简要说明你的作品是如何理解并落实赛项需求的？" }],
+        evaluations: { done: false, maxRounds: 3, rounds: [] },
+      });
+      onToast("已进入演示答辩（演示模式）");
+      return;
+    }
     if (!projectId) { onToast("请先在顶部选择赛项"); return; }
     setBusy(true);
     try {
@@ -232,8 +253,22 @@ export function StudentDefensePage({ projectId, onToast }) {
   };
 
   const submitAnswer = async () => {
-    if (DEMO_MODE) { onToast("演示模式：未连接后端"); return; }
-    if (!selected || !selected.id || !answer.trim()) { onToast("请填写作答内容"); return; }
+    if (!selected || !answer.trim()) { onToast("请填写作答内容"); return; }
+    if (DEMO_MODE) {
+      const studentTurn = { role: "student", content: answer, evaluation: { logic: 80, evidence: 70, accuracy: 78 } };
+      const judgeTurn = { role: "judge", content: "请进一步说明作品的应用成效与可量化价值体现。" };
+      setSelected((prev) => ({
+        ...prev,
+        transcript: [...(prev.transcript || []), studentTurn, judgeTurn],
+        evaluations: {
+          ...prev.evaluations,
+          rounds: [...(prev.evaluations?.rounds || []), { logic: 80, evidence: 70, accuracy: 78 }],
+        },
+      }));
+      setAnswer("");
+      onToast("作答已提交（演示）");
+      return;
+    }
     setBusy(true);
     try {
       const updated = await api.defense.answer(selected.id, answer);
@@ -244,6 +279,51 @@ export function StudentDefensePage({ projectId, onToast }) {
     finally { setBusy(false); }
   };
 
+  // 录音并转写：复用教师端同一套 MediaRecorder + WAV 转码 + 线上 ASR 逻辑
+  const startRecording = async () => {
+    if (DEMO_MODE) { onToast("演示模式：语音输入需连接后端并在设置中心配置 ASR"); return; }
+    if (recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const rawBlob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        if (!rawBlob.size) { onToast("录音为空，请重试"); return; }
+        try {
+          setRecognizing(true);
+          const wavBlob = await recordingToWav(rawBlob);
+          const data = await Promise.race([
+            api.speech.transcribe(wavBlob),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("语音识别超时，请稍后重试")), 75000),
+            ),
+          ]);
+          setAnswer((prev) => (prev && prev.trim() ? `${prev}\n${data.transcript}` : data.transcript));
+          onToast("语音已转为文字并填入作答");
+        } catch (e) {
+          onToast(e?.message || "语音识别失败");
+        } finally {
+          setRecognizing(false);
+        }
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch (e) {
+      onToast("无法访问麦克风：" + (e?.message || e));
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && recording) {
+      recorderRef.current.stop();
+      setRecording(false);
+    }
+  };
+
   const transcript = (selected && selected.transcript) || [];
   const evaluations = (selected && selected.evaluations) || {};
 
@@ -252,6 +332,7 @@ export function StudentDefensePage({ projectId, onToast }) {
       <PageIntro icon={MonitorPlay} title="模拟答辩" description="与 AI 评委展开多轮模拟答辩，获得逻辑、证据与准确性的评分反馈。" />
       <div className="student-card">
         <div className="defense-bar">
+          <span className="upload-project">当前赛项：<strong>{DEMO_MODE ? DEMO_PROJECT_NAME : (projectId ? "已选择" : "未选择")}</strong></span>
           <button className="page-primary" onClick={start} disabled={busy}>{DEMO_MODE ? "演示：发起模拟答辩" : "发起模拟答辩"}</button>
           {sessions.length > 0 && !DEMO_MODE && (
             <select value={selected && selected.id ? selected.id : ""} onChange={(e) => {
@@ -284,8 +365,15 @@ export function StudentDefensePage({ projectId, onToast }) {
               <div className="defense-summary"><SealCheck size={20} /><strong>总评</strong><p>{evaluations.overall}</p></div>
             ) : (
               <div className="answer-box">
-                <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="输入你的作答…" rows={3} />
-                <button className="page-primary" onClick={submitAnswer} disabled={busy}>提交作答</button>
+                <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="输入你的作答…（也可点击麦克风语音输入）" rows={3} />
+                <div className="parse-actions">
+                  <button className={`page-primary ${recording ? "recording" : ""}`} onClick={recording ? stopRecording : startRecording} disabled={recognizing}>
+                    <Microphone size={17} />{recording ? "停止录音" : (recognizing ? "识别中…" : "语音输入")}
+                  </button>
+                  <button className="page-primary" onClick={submitAnswer} disabled={busy || recognizing}>{busy ? "提交中…" : "提交作答"}</button>
+                </div>
+                {recording && <p className="recording-hint">录音中…点击「停止录音」结束并自动转写为文字。</p>}
+                {recognizing && <p className="recording-hint">语音识别中…识别完成会自动填入上方作答框，请稍候。</p>}
               </div>
             )}
           </div>

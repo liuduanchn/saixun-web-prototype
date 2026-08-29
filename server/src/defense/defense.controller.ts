@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Query, Body, Delete } from '@nestjs/common';
+import { Controller, Post, Get, Param, Query, Body, Delete, Patch } from '@nestjs/common';
 import { DefenseService } from './defense.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
@@ -41,5 +41,11 @@ export class DefenseController {
   @Delete('sessions/:id')
   remove(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     return this.defense.delete(id, user);
+  }
+
+  /** 重命名答辩记录标题（本人租户内） */
+  @Patch('sessions/:id')
+  rename(@Param('id') id: string, @Body('title') title: string, @CurrentUser() user: JwtPayload) {
+    return this.defense.rename(id, title, user);
   }
 }

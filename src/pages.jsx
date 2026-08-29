@@ -4,10 +4,11 @@ import {
   ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
-  Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X, Microphone,
+  Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X, Microphone, PencilSimple,
 } from "@phosphor-icons/react";
 import { StudentTasksPage, StudentWorksPage, StudentDiagnosisPage, StudentDefensePage } from "./studentPages.jsx";
 import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
+import { recordingToWav } from "./audio.js";
 import { normalizeTask, buildColumns } from "./taskModel.js";
 
 const criteria = [
@@ -430,48 +431,6 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
 
 // 浏览器录音转 WAV（PCM 16bit / 16kHz 单声道）：MediaRecorder 默认输出 webm/opus，
 // 转码为 WAV 后对任意 ASR（含硅基流动 SenseVoice）兼容性最佳，避免格式识别失败。
-function encodeWav(audioBuffer, targetRate = 16000) {
-  const channel = audioBuffer.getChannelData(0);
-  const ratio = audioBuffer.sampleRate / targetRate;
-  const newLen = Math.max(1, Math.round(channel.length / ratio));
-  const samples = new Int16Array(newLen);
-  for (let i = 0; i < newLen; i++) {
-    const s = Math.max(-1, Math.min(1, channel[Math.floor(i * ratio)]));
-    samples[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
-  writeStr(0, 'RIFF');
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, targetRate, true);
-  view.setUint32(28, targetRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  view.setUint32(40, samples.length * 2, true);
-  let off = 44;
-  for (let i = 0; i < samples.length; i++, off += 2) view.setInt16(off, samples[i], true);
-  return new Blob([buffer], { type: 'audio/wav' });
-}
-
-async function recordingToWav(blob) {
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AC();
-  try {
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    return encodeWav(audioBuffer);
-  } finally {
-    if (ctx.state !== 'closed') ctx.close();
-  }
-}
-
 function DefensePage({ onToast }) {
   const [comment, setComment] = useState("");
   const [session, setSession] = useState(null);
@@ -483,6 +442,9 @@ function DefensePage({ onToast }) {
   const [recognizing, setRecognizing] = useState(false); // 与提交 busy 区分，避免识别中误显「提交中」
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
+  // 历史答辩重命名（内联编辑标题）
+  const [editingId, setEditingId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState("");
 
   const loadSessions = async () => {
     try {
@@ -546,6 +508,27 @@ function DefensePage({ onToast }) {
       setSessions((list) => list.filter((x) => x.id !== id));
       onToast("答辩记录已删除");
     } catch (e) { onToast(e?.message || "删除失败"); }
+  };
+
+  const startRename = (s) => {
+    setEditingId(s.id);
+    setEditingTitle(s.title || "");
+  };
+  const cancelRename = () => {
+    setEditingId(null);
+    setEditingTitle("");
+  };
+  const saveRename = async (id) => {
+    try {
+      await api.defense.rename(id, editingTitle);
+      setSessions((list) => list.map((x) => (x.id === id ? { ...x, title: editingTitle.trim() || null } : x)));
+      onToast("标题已更新");
+    } catch (e) {
+      onToast(e?.message || "重命名失败");
+    } finally {
+      setEditingId(null);
+      setEditingTitle("");
+    }
   };
 
   const submitComment = () => { onToast(comment.trim() ? "教师补充评价已提交" : "请先填写补充评价"); if (comment.trim()) setComment(""); };
@@ -629,14 +612,34 @@ function DefensePage({ onToast }) {
             const status = ev?.done ? "已结束" : (roundCount ? `进行中（${roundCount} 轮）` : "未作答");
             return (
               <div className="session-item" key={s.id}>
-                <button className="session-resume" onClick={() => resume(s.id)}>
-                  <MonitorPlay size={17} />
-                  <span>
-                    <strong>{new Date(s.createdAt).toLocaleString("zh-CN")}</strong>
-                    <small>共 {roundCount} 轮 · {status}{lastScore ? ` · 证据分 ${lastScore.evidence}` : ""}{hasAnswer ? " · 含学生作答" : ""}</small>
-                  </span>
-                </button>
-                <button className="session-del" title="删除该答辩记录" onClick={(e) => deleteSession(s.id, e)}><Trash size={16} /></button>
+                {editingId === s.id ? (
+                  <div className="session-edit">
+                    <input
+                      autoFocus
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveRename(s.id); if (e.key === "Escape") cancelRename(); }}
+                      placeholder="输入答辩标题"
+                      aria-label="答辩标题"
+                    />
+                    <button className="session-save" onClick={() => saveRename(s.id)}>保存</button>
+                    <button className="session-cancel" onClick={cancelRename}>取消</button>
+                  </div>
+                ) : (
+                  <>
+                    <button className="session-resume" onClick={() => resume(s.id)}>
+                      <MonitorPlay size={17} />
+                      <span>
+                        <strong>{s.title || new Date(s.createdAt).toLocaleString("zh-CN")}</strong>
+                        <small>共 {roundCount} 轮 · {status}{lastScore ? ` · 证据分 ${lastScore.evidence}` : ""}{hasAnswer ? " · 含学生作答" : ""}</small>
+                      </span>
+                    </button>
+                    <div className="session-ops">
+                      <button className="session-rename" title="重命名" onClick={() => startRename(s)}><PencilSimple size={16} /></button>
+                      <button className="session-del" title="删除该答辩记录" onClick={(e) => deleteSession(s.id, e)}><Trash size={16} /></button>
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}
@@ -831,6 +834,39 @@ function ReviewPage({ projectId, onToast }) {
     }
   };
 
+  // 组装复盘报告 HTML（供导出 PDF：打开打印窗口由浏览器另存为 PDF）
+  const buildReportHtml = () => {
+    const row = (k, v) => `<tr><td>${k}</td><td>${v}</td></tr>`;
+    const ul = (arr) => `<ul>${(arr || []).map((t) => `<li>${t}</li>`).join("")}</ul>`;
+    const L = [];
+    L.push('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>赛后复盘报告</title>');
+    L.push('<style>body{font-family:"Noto Sans SC",system-ui,sans-serif;color:#0f172a;max-width:820px;margin:32px auto;padding:0 24px;line-height:1.7}h1{font-size:24px;border-bottom:3px solid #1d4ed8;padding-bottom:8px}h2{font-size:18px;margin-top:28px;color:#1d4ed8}h3{font-size:15px;margin:16px 0 6px}table{width:100%;border-collapse:collapse;margin:8px 0}td{border:1px solid #cbd5e1;padding:6px 10px;font-size:14px}td:first-child{width:160px;background:#f1f5f9;font-weight:600}ul{margin:4px 0;padding-left:20px}li{font-size:14px;margin:3px 0}@media print{body{margin:0}}</style>');
+    L.push('</head><body>');
+    L.push('<h1>赛后复盘报告</h1>');
+    L.push('<h2>一、关键指标</h2><table>' + [["训练任务", metrics.taskCount + " 个"], ["作品版本", metrics.workVersions + " 个"], ["问题关闭", metrics.issuesClosed + " 个"], ["答辩轮次", metrics.defenseRounds + " 个"], ["评分覆盖率", coverage.coverageRate + "%（" + coverage.coveredScorePoints + "/" + coverage.totalScorePoints + "）"]].map((r) => row(r[0], r[1])).join("") + '</table>');
+    L.push('<h2>二、能力成长</h2><table>' + growth.map((g) => row(g.label, g.value)).join("") + '</table>');
+    L.push('<h2>三、有效做法</h2>' + ul(report.effective));
+    L.push('<h2>四、主要短板</h2>' + ul(report.shortcomings));
+    L.push('<h2>五、下一轮建议</h2>' + ul(report.suggestions));
+    if (caseLib) {
+      L.push('<h2>六、案例沉淀</h2>');
+      L.push('<h3>1. 赛项模板</h3>' + ul((caseLib.templates || []).map((t) => t.title + "（权重 " + t.weight + "）：" + (t.points || []).join("、"))));
+      L.push('<h3>2. 典型问题</h3>' + ul((caseLib.issues || []).map((i) => i.name + "：累计 " + i.count + " 次（高/严重 " + i.high + "）")));
+      L.push('<h3>3. 优秀做法</h3>' + ul((caseLib.goodPractices || []).map((g) => g.title + "：" + g.content)));
+    }
+    L.push('</body></html>');
+    return L.join("\n");
+  };
+
+  const exportPdf = () => {
+    const w = window.open("", "_blank");
+    if (!w) { onToast("浏览器拦截了打印窗口，请允许弹出窗口后重试"); return; }
+    w.document.write(buildReportHtml());
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
+
   const refresh = () => {
     if (DEMO_MODE) { onToast("复盘报告已生成"); return; }
     setLoading(true);
@@ -844,7 +880,7 @@ function ReviewPage({ projectId, onToast }) {
     <PageIntro icon={Medal} title="赛后复盘" description="汇总训练过程、能力成长与关键问题，沉淀为下一轮可复用的备赛资产。" action={<button className="page-primary" onClick={refresh}>{loading ? "生成中…" : "生成复盘报告"}</button>} />
     {loading && <p className="empty-state">正在汇总复盘数据…</p>}
     {error && <p className="empty-state">{error}</p>}
-    {!loading && <><div className="review-metrics">{metricCards.map(([Icon,label,value,tone]) => <article className={tone} key={label}><Icon size={34} weight="duotone" /><span><small>{label}</small><strong>{value}</strong></span></article>)}</div><div className="review-grid"><section className="module-panel growth-panel"><h2>能力成长记录</h2>{growth.map(({label, value}) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}</strong></div>)}<h3>评分覆盖率</h3><div className="ability-row"><span>已覆盖 {coverage.coveredScorePoints}/{coverage.totalScorePoints}</span><div><i style={{width:`${coverage.coverageRate}%`}} /></div><strong>{coverage.coverageRate}%</strong></div></section><section className="module-panel report-panel"><h2>赛后复盘报告<div className="report-actions"><button className="secondary-button" onClick={copyReport}>复制</button><button className="secondary-button" onClick={exportReport} disabled={exporting}>{exporting ? "导出中…" : "导出 .md"}</button></div></h2>{[[CheckCircle,"有效做法",report.effective,"green"],[WarningCircle,"主要短板",report.shortcomings,"orange"],[TrendUp,"下一轮建议",report.suggestions,"blue"]].map(([Icon,title,items,tone]) => <article className={tone} key={title}><Icon size={27} weight="duotone" /><div><strong>{title}</strong>{items.map((text,index) => <p key={index}>{text}</p>)}</div></article>)}</section></div></>}
+    {!loading && <><div className="review-metrics">{metricCards.map(([Icon,label,value,tone]) => <article className={tone} key={label}><Icon size={34} weight="duotone" /><span><small>{label}</small><strong>{value}</strong></span></article>)}</div><div className="review-grid"><section className="module-panel growth-panel"><h2>能力成长记录</h2>{growth.map(({label, value}) => <div className="ability-row" key={label}><span>{label}</span><div><i style={{width:`${value}%`}} /></div><strong>{value}</strong></div>)}<h3>评分覆盖率</h3><div className="ability-row"><span>已覆盖 {coverage.coveredScorePoints}/{coverage.totalScorePoints}</span><div><i style={{width:`${coverage.coverageRate}%`}} /></div><strong>{coverage.coverageRate}%</strong></div></section><section className="module-panel report-panel"><h2>赛后复盘报告<div className="report-actions"><button className="secondary-button" onClick={copyReport}>复制</button><button className="secondary-button" onClick={exportReport} disabled={exporting}>{exporting ? "导出中…" : "导出 .md"}</button><button className="secondary-button" onClick={exportPdf}>导出 PDF</button></div></h2>{[[CheckCircle,"有效做法",report.effective,"green"],[WarningCircle,"主要短板",report.shortcomings,"orange"],[TrendUp,"下一轮建议",report.suggestions,"blue"]].map(([Icon,title,items,tone]) => <article className={tone} key={title}><Icon size={27} weight="duotone" /><div><strong>{title}</strong>{items.map((text,index) => <p key={index}>{text}</p>)}</div></article>)}</section></div></>}
     <section className="module-panel case-library">
       <h2>案例沉淀</h2>
       {caseError && <p className="empty-state">{caseError}</p>}
@@ -1034,7 +1070,7 @@ function LearningPage({ onNavigate, projectId }) {
 
 function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTenant }) {
   const [tenant, setTenant] = useState(DEMO_MODE ? { name: "智造先锋队（演示）", memberCount: 2, projectCount: 1 } : null);
-  const [members, setMembers] = useState(DEMO_MODE ? [{ id: "u1", name: "张老师", username: "teacher", role: "TEACHER" }, { id: "u2", name: "李老师", username: "teacher2", role: "TEACHER" }] : []);
+  const [members, setMembers] = useState(DEMO_MODE ? [{ id: "u1", name: "张老师", username: "teacher", role: "TEACHER" }, { id: "u2", name: "李老师", username: "teacher2", role: "TEACHER" }, { id: "u3", name: "王同学", username: "student1", role: "STUDENT" }] : []);
   const [teamName, setTeamName] = useState(tenant?.name || "");
   const [newMember, setNewMember] = useState("");
   const [newRole, setNewRole] = useState("MEMBER");

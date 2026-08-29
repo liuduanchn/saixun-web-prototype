@@ -288,6 +288,20 @@ export class DefenseService {
     return { id };
   }
 
+  /** 重命名答辩记录标题（本人租户内）；空标题视为清除 */
+  async rename(id: string, title: string, user: JwtPayload) {
+    const session = await this.prisma.defenseSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException('答辩会话不存在');
+    const project = await this.prisma.project.findUnique({ where: { id: session.projectId } });
+    if (project?.tenantId !== user.tenantId)
+      throw new ForbiddenException('无权限修改该答辩');
+    const updated = await this.prisma.defenseSession.update({
+      where: { id },
+      data: { title: title ? title.trim().slice(0, 80) : null },
+    });
+    return updated;
+  }
+
   // ---- 启发式兜底（无 AI 密钥时本地可用）----
   private heuristicQuestion(round: number): string {
     const qs = [

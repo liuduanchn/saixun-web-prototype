@@ -203,6 +203,7 @@ model DefenseSession {
   transcript Json
   evaluations Json
   createdAt  DateTime @default(now())
+  title     String?
 
   @@index([projectId])
 }
