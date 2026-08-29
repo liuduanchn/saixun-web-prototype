@@ -480,11 +480,17 @@ function DefensePage({ onToast }) {
   const [busy, setBusy] = useState(false);
   // 语音输入相关状态（录音 → 调线上 ASR → 回填作答文本）
   const [recording, setRecording] = useState(false);
+  const [recognizing, setRecognizing] = useState(false); // 与提交 busy 区分，避免识别中误显「提交中」
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
 
   const loadSessions = async () => {
-    try { setSessions(await api.defense.list(PROJECT_ID)); } catch { /* ignore */ }
+    try {
+      const data = await api.defense.list(PROJECT_ID);
+      // 兼容分页对象 {items,total} 与直接数组两种返回形态
+      const list = Array.isArray(data) ? data : (data?.items ?? []);
+      setSessions(list);
+    } catch { /* ignore */ }
   };
   useEffect(() => { if (!DEMO_MODE) loadSessions(); /* eslint-disable-next-line */ }, [onToast]);
 
@@ -528,7 +534,8 @@ function DefensePage({ onToast }) {
         const rawBlob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
         if (!rawBlob.size) { onToast("录音为空，请重试"); return; }
         try {
-          setBusy(true);
+          // 仅置识别中状态，不占用提交按钮的 busy，避免识别中误显「提交中…」
+          setRecognizing(true);
           // 浏览器采集为 webm/opus，转码为 WAV(PCM) 以兼容线上 ASR
           const wavBlob = await recordingToWav(rawBlob);
           const data = await api.speech.transcribe(wavBlob);
@@ -537,7 +544,7 @@ function DefensePage({ onToast }) {
         } catch (e) {
           onToast(e?.message || "语音识别失败");
         } finally {
-          setBusy(false);
+          setRecognizing(false);
         }
       };
       recorderRef.current = rec;
@@ -572,7 +579,29 @@ function DefensePage({ onToast }) {
     {!session ? (
       <div className="defense-start">
         <button className="page-primary" onClick={startSession} disabled={busy}><Brain size={19} />{busy ? "发起中…" : "发起模拟答辩"}</button>
-        {sessions.length > 0 && <div className="session-history"><h3>历史答辩</h3>{sessions.map((s) => <button key={s.id} onClick={() => resume(s.id)}><MonitorPlay size={17} />{new Date(s.createdAt).toLocaleString("zh-CN")} · 共 {s.evaluations?.rounds?.length || 0} 轮{((s.evaluations?.done) ? " · 已结束" : "")}</button>)}</div>}
+        <div className="session-history">
+          <h3>历史答辩</h3>
+          {sessions.length === 0 && <p className="empty-state">暂无历史答辩记录，点击上方按钮发起一场模拟答辩。</p>}
+          {sessions.map((s) => {
+            // evaluations 可能为对象或 JSON 字符串，统一解析
+            let ev = s.evaluations;
+            if (typeof ev === "string") { try { ev = JSON.parse(ev); } catch { ev = null; } }
+            const rounds = (ev?.rounds || []);
+            const roundCount = rounds.length;
+            const hasAnswer = (s.transcript || []).some((t) => t.role === "student");
+            const lastScore = rounds.length ? rounds[rounds.length - 1]?.scores : null;
+            const status = ev?.done ? "已结束" : (roundCount ? `进行中（${roundCount} 轮）` : "未作答");
+            return (
+              <button key={s.id} onClick={() => resume(s.id)}>
+                <MonitorPlay size={17} />
+                <span>
+                  <strong>{new Date(s.createdAt).toLocaleString("zh-CN")}</strong>
+                  <small>共 {roundCount} 轮 · {status}{lastScore ? ` · 证据分 ${lastScore.evidence}` : ""}{hasAnswer ? " · 含学生作答" : ""}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     ) : (
       <div className="defense-layout"><section className="defense-thread">
@@ -588,13 +617,14 @@ function DefensePage({ onToast }) {
         <h2>学生作答</h2>
         <textarea aria-label="学生作答" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="请输入对评委提问的回答……（也可点击麦克风语音输入）" />
         <div className="parse-actions">
-          <button className={`page-primary ${recording ? "recording" : ""}`} onClick={recording ? stopRecording : startRecording} disabled={busy && !recording}>
-            <Microphone size={17} />{recording ? "停止录音" : "语音输入"}
+          <button className={`page-primary ${recording ? "recording" : ""}`} onClick={recording ? stopRecording : startRecording} disabled={recognizing}>
+            <Microphone size={17} />{recording ? "停止录音" : (recognizing ? "识别中…" : "语音输入")}
           </button>
-          <button className="page-primary" onClick={submitAnswer} disabled={busy}>{busy ? "提交中…" : "提交作答"}</button>
+          <button className="page-primary" onClick={submitAnswer} disabled={busy || recognizing}>{busy ? "提交中…" : "提交作答"}</button>
           <button className="secondary-button" onClick={() => setSession(null)}>返回列表</button>
         </div>
-        {recording && <p className="recording-hint">录音中…松开麦克风结束并自动转写。</p>}
+        {recording && <p className="recording-hint">录音中…点击「停止录音」结束并自动转写为文字。</p>}
+        {recognizing && <p className="recording-hint">语音识别中…识别完成会自动填入上方作答框，请稍候。</p>}
       </section>
     )}
     {session && (
