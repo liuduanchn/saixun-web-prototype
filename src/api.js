@@ -323,6 +323,9 @@ export const api = {
     get(id) {
       return request(`/defense/sessions/${id}`);
     },
+    delete(id) {
+      return request(`/defense/sessions/${id}`, { method: "DELETE" });
+    },
   },
   projects: {
     list() {

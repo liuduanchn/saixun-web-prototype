@@ -212,11 +212,15 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
 /* —— P2 模拟答辩室 —— */
 .defense-start { display: flex; flex-direction: column; gap: 18px; margin-top: 18px; }
 .session-history h3 { font-size: 15px; margin: 6px 0; color: #f4f8ff; }
-.session-history button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid #1f466e; background: #08233f; border-radius: 9px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; color: #f4f8ff; cursor: pointer; }
-.session-history button:hover { background: #0a294d; border-color: #2a5a8a; }
-.session-history button span { display: flex; flex-direction: column; gap: 2px; }
-.session-history button strong { color: #f4f8ff; font-weight: 600; }
-.session-history button small { color: #8fa4bc; font-size: 11px; }
+.session-item { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+.session-resume { flex: 1; display: flex; align-items: center; gap: 8px; text-align: left; border: 1px solid #1f466e; background: #08233f; border-radius: 9px; padding: 10px 12px; font-size: 13px; color: #f4f8ff; cursor: pointer; }
+.session-resume:hover { background: #0a294d; border-color: #2a5a8a; }
+.session-resume span { display: flex; flex-direction: column; gap: 2px; }
+.session-resume strong { color: #f4f8ff; font-weight: 600; }
+.session-resume small { color: #8fa4bc; font-size: 11px; }
+.session-del { flex: 0 0 auto; width: 42px; display: grid; place-items: center; border: 1px solid #1f466e; background: #08233f; border-radius: 9px; color: #8fa4bc; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.session-del:hover { background: #2a1622; border-color: #5a2a3a; color: #ff8a80; }
+.defense-session-bar { display: flex; margin-bottom: 14px; }
 .answer-eval { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 12px; color: #475569; }
 .answer-eval span { background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
 .answer-eval small { flex-basis: 100%; color: #64748b; margin-top: 2px; }

@@ -277,6 +277,17 @@ export class DefenseService {
     return session;
   }
 
+  /** 删除答辩记录：校验租户归属后物理删除 */
+  async delete(id: string, user: JwtPayload) {
+    const session = await this.prisma.defenseSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException('答辩会话不存在');
+    const project = await this.prisma.project.findUnique({ where: { id: session.projectId } });
+    if (project?.tenantId !== user.tenantId)
+      throw new ForbiddenException('无权限删除该答辩');
+    await this.prisma.defenseSession.delete({ where: { id } });
+    return { id };
+  }
+
   // ---- 启发式兜底（无 AI 密钥时本地可用）----
   private heuristicQuestion(round: number): string {
     const qs = [

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRight, BookOpenText, Brain, Buildings, CalendarBlank, ChartBar, Check, CheckCircle,
+  ArrowLeft, ArrowRight, BookOpenText, Brain, Buildings, CalendarBlank, ChartBar, Check, CheckCircle,
   ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
@@ -518,6 +518,36 @@ function DefensePage({ onToast }) {
     try { setSession(await api.defense.get(id)); } catch (e) { onToast(e.message || "加载失败"); }
   };
 
+  // 判断一条答辩记录是否「全空」：无学生作答、无评分轮次则不落库
+  const isEmptySession = (s) => {
+    const tr = s?.transcript || [];
+    let rounds = [];
+    if (s?.evaluations) {
+      try { rounds = (typeof s.evaluations === "string" ? JSON.parse(s.evaluations) : s.evaluations)?.rounds || []; } catch { rounds = []; }
+    }
+    const hasStudent = tr.some((t) => t.role === "student");
+    return !hasStudent && rounds.length === 0;
+  };
+
+  // 返回列表：若当前答辩无任何作答/评分，则视为空白记录一并删除
+  const backToList = async () => {
+    const current = session;
+    setSession(null);
+    if (current && isEmptySession(current)) {
+      try { await api.defense.delete(current.id); } catch { /* 忽略删除失败，不影响返回 */ }
+    }
+    loadSessions();
+  };
+
+  const deleteSession = async (id, event) => {
+    event?.stopPropagation();
+    try {
+      await api.defense.delete(id);
+      setSessions((list) => list.filter((x) => x.id !== id));
+      onToast("答辩记录已删除");
+    } catch (e) { onToast(e?.message || "删除失败"); }
+  };
+
   const submitComment = () => { onToast(comment.trim() ? "教师补充评价已提交" : "请先填写补充评价"); if (comment.trim()) setComment(""); };
 
   // 录音并转写：MediaRecorder 采集 → 调 /speech/transcribe → 回填作答
@@ -598,25 +628,33 @@ function DefensePage({ onToast }) {
             const lastScore = rounds.length ? rounds[rounds.length - 1]?.scores : null;
             const status = ev?.done ? "已结束" : (roundCount ? `进行中（${roundCount} 轮）` : "未作答");
             return (
-              <button key={s.id} onClick={() => resume(s.id)}>
-                <MonitorPlay size={17} />
-                <span>
-                  <strong>{new Date(s.createdAt).toLocaleString("zh-CN")}</strong>
-                  <small>共 {roundCount} 轮 · {status}{lastScore ? ` · 证据分 ${lastScore.evidence}` : ""}{hasAnswer ? " · 含学生作答" : ""}</small>
-                </span>
-              </button>
+              <div className="session-item" key={s.id}>
+                <button className="session-resume" onClick={() => resume(s.id)}>
+                  <MonitorPlay size={17} />
+                  <span>
+                    <strong>{new Date(s.createdAt).toLocaleString("zh-CN")}</strong>
+                    <small>共 {roundCount} 轮 · {status}{lastScore ? ` · 证据分 ${lastScore.evidence}` : ""}{hasAnswer ? " · 含学生作答" : ""}</small>
+                  </span>
+                </button>
+                <button className="session-del" title="删除该答辩记录" onClick={(e) => deleteSession(s.id, e)}><Trash size={16} /></button>
+              </div>
             );
           })}
         </div>
       </div>
     ) : (
-      <div className="defense-layout"><section className="defense-thread">
+      <>
+        <div className="defense-session-bar">
+          <button className="secondary-button" onClick={backToList}><ArrowLeft size={16} />返回列表</button>
+        </div>
+        <div className="defense-layout"><section className="defense-thread">
         {transcript.map((entry, i) => <article className={`dialog-card ${entry.role === "judge" ? "ai" : "student"}`} key={i}><span>{entry.role === "judge" ? <Brain size={26} /> : <Student size={26} />}</span><div><strong>{entry.role === "judge" ? "AI 评委" : "学生回答"}</strong><p>{entry.content}</p>{entry.evaluation && <div className="answer-eval"><span>逻辑 {entry.evaluation.logic}</span><span>证据 {entry.evaluation.evidence}</span><span>技术 {entry.evaluation.accuracy}</span><small>{entry.evaluation.comment}</small></div>}</div></article>)}
         {done && evaluations.overall && <article className="dialog-card summary"><span><SealCheck size={26} /></span><div><strong>总评</strong><p>{evaluations.overall}</p></div></article>}
       </section><aside className="defense-side">
         <section className="module-panel"><h2>本轮评价</h2>{lastRound ? <div className="evaluation-row"><StatusTag tone={lastRound.scores.evidence >= 60 ? "green" : "orange"}>{lastRound.scores.evidence >= 60 ? "通过" : "不足"}</StatusTag><span>证据充分</span><strong>{lastRound.scores.evidence}</strong></div> : <p className="empty-state">尚未作答</p>}{lastRound?.comment && <p className="eval-comment">{lastRound.comment}</p>}</section>
         <section className="module-panel evidence-gap"><h2>评分进度</h2><strong>{evaluations.rounds?.length || 0} / {evaluations.maxRounds} 轮</strong><p>已完成评分轮次，结束后可查看总评与改进建议。</p></section>
       </aside></div>
+      </>
     )}
     {session && !done && (
       <section className="module-panel teacher-comment">
@@ -627,7 +665,7 @@ function DefensePage({ onToast }) {
             <Microphone size={17} />{recording ? "停止录音" : (recognizing ? "识别中…" : "语音输入")}
           </button>
           <button className="page-primary" onClick={submitAnswer} disabled={busy || recognizing}>{busy ? "提交中…" : "提交作答"}</button>
-          <button className="secondary-button" onClick={() => setSession(null)}>返回列表</button>
+          <button className="secondary-button" onClick={backToList}>返回列表</button>
         </div>
         {recording && <p className="recording-hint">录音中…点击「停止录音」结束并自动转写为文字。</p>}
         {recognizing && <p className="recording-hint">语音识别中…识别完成会自动填入上方作答框，请稍候。</p>}
