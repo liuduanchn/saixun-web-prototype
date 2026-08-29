@@ -428,6 +428,50 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
   </section>;
 }
 
+// 浏览器录音转 WAV（PCM 16bit / 16kHz 单声道）：MediaRecorder 默认输出 webm/opus，
+// 转码为 WAV 后对任意 ASR（含硅基流动 SenseVoice）兼容性最佳，避免格式识别失败。
+function encodeWav(audioBuffer, targetRate = 16000) {
+  const channel = audioBuffer.getChannelData(0);
+  const ratio = audioBuffer.sampleRate / targetRate;
+  const newLen = Math.max(1, Math.round(channel.length / ratio));
+  const samples = new Int16Array(newLen);
+  for (let i = 0; i < newLen; i++) {
+    const s = Math.max(-1, Math.min(1, channel[Math.floor(i * ratio)]));
+    samples[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, targetRate, true);
+  view.setUint32(28, targetRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++, off += 2) view.setInt16(off, samples[i], true);
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+async function recordingToWav(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    return encodeWav(audioBuffer);
+  } finally {
+    if (ctx.state !== 'closed') ctx.close();
+  }
+}
+
 function DefensePage({ onToast }) {
   const [comment, setComment] = useState("");
   const [session, setSession] = useState(null);
@@ -481,11 +525,13 @@ function DefensePage({ onToast }) {
       rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-        if (!blob.size) { onToast("录音为空，请重试"); return; }
+        const rawBlob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        if (!rawBlob.size) { onToast("录音为空，请重试"); return; }
         try {
           setBusy(true);
-          const data = await api.speech.transcribe(blob);
+          // 浏览器采集为 webm/opus，转码为 WAV(PCM) 以兼容线上 ASR
+          const wavBlob = await recordingToWav(rawBlob);
+          const data = await api.speech.transcribe(wavBlob);
           setAnswer((prev) => (prev && prev.trim() ? `${prev}\n${data.transcript}` : data.transcript));
           onToast("语音已转为文字并填入作答");
         } catch (e) {
@@ -923,17 +969,42 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
   const [preferences, setPreferences] = useState({ task: true, review: true, risk: true });
   const toggle = (key) => setPreferences((current) => ({...current, [key]: !current[key]}));
   // 语音识别（ASR）配置：与 Tenant.settings 字段对应，仅保存非空值
-  const [asr, setAsr] = useState({ asrApiKey: "", asrEndpoint: "", asrHeaderName: "", asrAuthScheme: "", asrField: "" });
+  const [asr, setAsr] = useState({ asrProvider: "siliconflow", asrApiKey: "", asrEndpoint: "", asrHeaderName: "", asrAuthScheme: "", asrField: "", asrModel: "FunAudioLLM/SenseVoiceSmall" });
   const [asrSaving, setAsrSaving] = useState(false);
+  // 服务商预设：选硅基流动自动填好地址/字段名/鉴权/默认模型，用户只需填 API Key（可选改模型名）
+  const ASR_PRESETS = {
+    siliconflow: {
+      asrEndpoint: "https://api.siliconflow.cn/v1/audio/transcriptions",
+      asrHeaderName: "Authorization",
+      asrAuthScheme: "Bearer",
+      asrField: "file",
+      asrModel: "FunAudioLLM/SenseVoiceSmall",
+    },
+  };
   const asrFromSettings = (settings) => {
     const s = (settings && typeof settings === "object") ? settings : {};
+    const provider = s.asrProvider === "custom" ? "custom" : "siliconflow";
+    const preset = provider === "siliconflow" ? ASR_PRESETS.siliconflow : {};
     return {
+      asrProvider: provider,
       asrApiKey: s.asrApiKey || "",
-      asrEndpoint: s.asrEndpoint || "",
-      asrHeaderName: s.asrHeaderName || "",
-      asrAuthScheme: s.asrAuthScheme || "",
-      asrField: s.asrField || "",
+      asrEndpoint: s.asrEndpoint || preset.asrEndpoint || "",
+      asrHeaderName: s.asrHeaderName || preset.asrHeaderName || "",
+      asrAuthScheme: s.asrAuthScheme || preset.asrAuthScheme || "",
+      asrField: s.asrField || preset.asrField || "",
+      asrModel: s.asrModel || preset.asrModel || "",
     };
+  };
+  // 切换服务商预设：用预设值覆盖对应字段（自定义模式不清空，便于手动编辑）
+  const applyProviderPreset = (provider) => {
+    setAsr((c) => {
+      const base = { ...c, asrProvider: provider };
+      if (provider === "siliconflow") {
+        const p = ASR_PRESETS.siliconflow;
+        return { ...base, asrEndpoint: p.asrEndpoint, asrHeaderName: p.asrHeaderName, asrAuthScheme: p.asrAuthScheme, asrField: p.asrField, asrModel: p.asrModel };
+      }
+      return base;
+    });
   };
   // 当前账号可切换的全部团队（含 isActive 标记）
   const [myTeams, setMyTeams] = useState(DEMO_MODE ? [{ tenantId: "demo-tenant", name: "智造先锋队（演示）", isActive: true }, { tenantId: "innovation-tenant", name: "创新实验队（演示）", isActive: false }] : []);
@@ -1066,6 +1137,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
     const payload = {};
     Object.entries(asr).forEach(([k, v]) => { if (v && String(v).trim()) payload[k] = v; });
     if (!payload.asrApiKey || !payload.asrEndpoint) { onToast("请至少填写 ASR API Key 与接口地址"); return; }
+    if (!payload.asrModel) { onToast("请填写 ASR 模型名称（如 FunAudioLLM/SenseVoiceSmall）"); return; }
     setAsrSaving(true);
     try {
       await api.tenants.updateSettings(payload);
@@ -1133,11 +1205,18 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
     <section className="module-panel asr-settings">
       <h2>语音识别（ASR）配置</h2>
       <p className="muted small">用于模拟答辩"语音输入"：密钥仅保存在后端，不会下发到学生作答界面。配置后学生发声作答可自动转写为文字。</p>
+      <label className="field-row"><span>服务商</span>
+        <select value={asr.asrProvider} onChange={(e) => applyProviderPreset(e.target.value)} aria-label="ASR 服务商">
+          <option value="siliconflow">硅基流动 SiliconFlow</option>
+          <option value="custom">自定义</option>
+        </select>
+      </label>
       <label className="field-row"><span>ASR API Key</span><input type="password" value={asr.asrApiKey} onChange={(e) => setAsr((c) => ({ ...c, asrApiKey: e.target.value }))} placeholder="线上 ASR 服务密钥" aria-label="ASR API Key" /></label>
-      <label className="field-row"><span>ASR 接口地址</span><input value={asr.asrEndpoint} onChange={(e) => setAsr((c) => ({ ...c, asrEndpoint: e.target.value }))} placeholder="https://.../asr" aria-label="ASR 接口地址" /></label>
-      <label className="field-row"><span>鉴权头名称</span><input value={asr.asrHeaderName} onChange={(e) => setAsr((c) => ({ ...c, asrHeaderName: e.target.value }))} placeholder="默认 Authorization" aria-label="鉴权头名称" /></label>
-      <label className="field-row"><span>鉴权头前缀</span><input value={asr.asrAuthScheme} onChange={(e) => setAsr((c) => ({ ...c, asrAuthScheme: e.target.value }))} placeholder="默认 Bearer" aria-label="鉴权头前缀" /></label>
-      <label className="field-row"><span>音频字段名</span><input value={asr.asrField} onChange={(e) => setAsr((c) => ({ ...c, asrField: e.target.value }))} placeholder="默认 audio" aria-label="音频字段名" /></label>
+      <label className="field-row"><span>模型名称</span><input value={asr.asrModel} disabled={asr.asrProvider === "siliconflow"} onChange={(e) => setAsr((c) => ({ ...c, asrModel: e.target.value }))} placeholder="FunAudioLLM/SenseVoiceSmall" aria-label="ASR 模型名称" /></label>
+      <label className="field-row"><span>ASR 接口地址</span><input value={asr.asrEndpoint} disabled={asr.asrProvider === "siliconflow"} onChange={(e) => setAsr((c) => ({ ...c, asrEndpoint: e.target.value }))} placeholder="https://.../asr" aria-label="ASR 接口地址" /></label>
+      <label className="field-row"><span>鉴权头名称</span><input value={asr.asrHeaderName} disabled={asr.asrProvider === "siliconflow"} onChange={(e) => setAsr((c) => ({ ...c, asrHeaderName: e.target.value }))} placeholder="默认 Authorization" aria-label="鉴权头名称" /></label>
+      <label className="field-row"><span>鉴权头前缀</span><input value={asr.asrAuthScheme} disabled={asr.asrProvider === "siliconflow"} onChange={(e) => setAsr((c) => ({ ...c, asrAuthScheme: e.target.value }))} placeholder="默认 Bearer" aria-label="鉴权头前缀" /></label>
+      <label className="field-row"><span>音频字段名</span><input value={asr.asrField} disabled={asr.asrProvider === "siliconflow"} onChange={(e) => setAsr((c) => ({ ...c, asrField: e.target.value }))} placeholder="默认 file" aria-label="音频字段名" /></label>
       <button className="page-primary save-settings" onClick={saveAsr} disabled={asrSaving}>{asrSaving ? "保存中…" : "保存 ASR 配置"}</button>
     </section>
   </div></section>;
