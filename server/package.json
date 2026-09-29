@@ -12,6 +12,11 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed:instances": "ts-node prisma/seed-instance-projects.ts",
+    "prisma:seed:instances:reset": "ts-node prisma/seed-instance-projects.ts --reset",
+    "verify:instances": "node scripts/verify-instance-seed.js && node scripts/verify-instance-api.js",
+    "verify:instances:db": "node scripts/verify-instance-seed.js",
+    "snapshot:db": "node scripts/db-snapshot.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest"
   },
