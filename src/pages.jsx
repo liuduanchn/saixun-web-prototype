@@ -7,7 +7,7 @@ import {
   Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X, Microphone, PencilSimple,
 } from "@phosphor-icons/react";
 import { StudentTasksPage, StudentWorksPage, StudentDiagnosisPage, StudentDefensePage } from "./studentPages.jsx";
-import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
+import { api, DEMO_MODE } from "./api.js";
 import { recordingToWav } from "./audio.js";
 import { normalizeTask, buildColumns } from "./taskModel.js";
 
@@ -45,7 +45,7 @@ function StatusTag({ children, tone = "blue" }) {
   return <span className={`status-tag ${tone}`}>{children}</span>;
 }
 
-function AnalysisPage({ onNavigate, onToast }) {
+function AnalysisPage({ onNavigate, onToast, projectId }) {
   const [list, setList] = useState(DEMO_MODE ? criteria : []);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
@@ -63,7 +63,7 @@ function AnalysisPage({ onNavigate, onToast }) {
     }
     setUploading(true);
     try {
-      const { draft } = await api.criteria.parseFile(PROJECT_ID, file);
+      const { draft } = await api.criteria.parseFile(projectId, file);
       setDraft(draft);
       onToast("规程文件已解析，请核对下方草稿");
     } catch (e) {
@@ -74,15 +74,15 @@ function AnalysisPage({ onNavigate, onToast }) {
   };
 
   useEffect(() => {
-    if (DEMO_MODE) { setList(criteria); return; }
+    if (DEMO_MODE || !projectId) return undefined;
     let alive = true;
     setLoading(true);
-    api.criteria.list(PROJECT_ID)
+    api.criteria.list(projectId)
       .then((data) => { if (alive) setList(data); })
       .catch(() => { if (alive) onToast("评分标准加载失败"); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [onToast]);
+  }, [onToast, projectId]);
 
   const pointsOf = (c) => (DEMO_MODE ? c.points : c.scorePoints.map((sp) => sp.name));
 
@@ -101,8 +101,8 @@ function AnalysisPage({ onNavigate, onToast }) {
     if (!draft) return;
     setBusy(true);
     try {
-      await api.criteria.confirm(PROJECT_ID, draft);
-      const data = await api.criteria.list(PROJECT_ID);
+      await api.criteria.confirm(projectId, draft);
+      const data = await api.criteria.list(projectId);
       setList(data);
       setDraft(null); setText("");
       onToast("评分要素已确认并加入训练路线");
@@ -193,7 +193,7 @@ function seedDemoTasks() {
   });
 }
 
-function TrainingPage({ onToast, user }) {
+function TrainingPage({ onToast, user, projectId }) {
   const role = user?.role || "TEACHER";
   const [tasks, setTasks] = useState(DEMO_MODE ? null : []);
   const [demoTasks, setDemoTasks] = useState(DEMO_MODE ? seedDemoTasks() : null);
@@ -202,16 +202,20 @@ function TrainingPage({ onToast, user }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (DEMO_MODE) return undefined;
+    if (DEMO_MODE || !projectId) return undefined;
     let active = true;
+    setLoading(true);
+    setError("");
     const load = async () => {
       try {
         const [list, cov] = await Promise.all([
-          api.tasks.list(PROJECT_ID),
-          api.tasks.coverage(PROJECT_ID),
+          api.tasks.list(projectId),
+          api.tasks.coverage(projectId),
         ]);
         if (!active) return;
-        setTasks(list.map(normalizeTask));
+        // tasks.list 已改为分页返回 {items}，兼容数组与分页对象两种形状
+        const raw = Array.isArray(list) ? list : (list?.items ?? []);
+        setTasks(raw.map(normalizeTask));
         setCoverage(cov);
       } catch (err) {
         if (active) setError(err?.message || "任务数据加载失败");
@@ -223,7 +227,7 @@ function TrainingPage({ onToast, user }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [projectId]);
 
   const list = DEMO_MODE ? demoTasks : tasks;
 
@@ -249,7 +253,7 @@ function TrainingPage({ onToast, user }) {
       return;
     }
     try {
-      const created = await api.tasks.create({ projectId: PROJECT_ID, title: title.trim(), status });
+      const created = await api.tasks.create({ projectId, title: title.trim(), status });
       setTasks((cur) => [normalizeTask(created), ...cur]);
       onToast("任务已创建");
     } catch (err) {
@@ -344,11 +348,37 @@ function normalizeDiagnosis(d) {
   };
 }
 
-function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
+function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast, projectId }) {
   const [version, setVersion] = useState(null);
   const [findings, setFindings] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // 进入页面 / 切换赛项时，自动载入该项目最新作品版本及其既有诊断明细。
+  // 此前仅在手动上传后才 setVersion，导致已诊断过的项目仍显示「尚未上传作品」。
+  useEffect(() => {
+    if (DEMO_MODE || !projectId) return undefined;
+    let alive = true;
+    setError("");
+    (async () => {
+      try {
+        const worksRaw = await api.works.list(projectId);
+        const works = Array.isArray(worksRaw) ? worksRaw : (worksRaw?.items ?? []);
+        const latest = [...works].sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0];
+        if (!latest) {
+          if (alive) { setVersion(null); setFindings([]); }
+          return;
+        }
+        if (alive) setVersion({ id: latest.id, version: latest.version });
+        const diagRaw = await api.diagnosis.list(latest.id);
+        const diags = Array.isArray(diagRaw) ? diagRaw : (diagRaw?.items ?? []);
+        if (alive) setFindings(diags.map(normalizeDiagnosis));
+      } catch (err) {
+        if (alive) setError(err?.message || "作品诊断数据加载失败");
+      }
+    })();
+    return () => { alive = false; };
+  }, [projectId]);
 
   if (DEMO_MODE) {
     return <section className="module-page">
@@ -364,7 +394,7 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
     setBusy(true);
     setError("");
     try {
-      const wv = await api.works.upload(PROJECT_ID, file);
+      const wv = await api.works.upload(projectId, file);
       setVersion({ id: wv.id, version: wv.version });
       const list = await api.diagnosis.analyze(wv.id);
       setFindings(list.map(normalizeDiagnosis));
@@ -431,7 +461,7 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast }) {
 
 // 浏览器录音转 WAV（PCM 16bit / 16kHz 单声道）：MediaRecorder 默认输出 webm/opus，
 // 转码为 WAV 后对任意 ASR（含硅基流动 SenseVoice）兼容性最佳，避免格式识别失败。
-function DefensePage({ onToast }) {
+function DefensePage({ onToast, projectId }) {
   const [comment, setComment] = useState("");
   const [session, setSession] = useState(null);
   const [sessions, setSessions] = useState([]);
@@ -446,20 +476,29 @@ function DefensePage({ onToast }) {
   const [editingId, setEditingId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
 
-  const loadSessions = async () => {
+  // autoOpen=true 时自动选中最近一场答辩，使历史对话记录直接可见（此前需手动点击）
+  const loadSessions = async ({ autoOpen = false } = {}) => {
     try {
-      const data = await api.defense.list(PROJECT_ID);
+      const data = await api.defense.list(projectId);
       // 兼容分页对象 {items,total} 与直接数组两种返回形态
       const list = Array.isArray(data) ? data : (data?.items ?? []);
       setSessions(list);
+      if (autoOpen && list.length) {
+        const detail = await api.defense.get(list[0].id);
+        setSession(detail);
+      }
     } catch { /* ignore */ }
   };
-  useEffect(() => { if (!DEMO_MODE) loadSessions(); /* eslint-disable-next-line */ }, [onToast]);
+  useEffect(() => {
+    if (DEMO_MODE || !projectId) return undefined;
+    loadSessions({ autoOpen: true });
+    /* eslint-disable-next-line */
+  }, [onToast, projectId]);
 
   const startSession = async () => {
     setBusy(true);
     try {
-      const s = await api.defense.create(PROJECT_ID, 3);
+      const s = await api.defense.create(projectId, 3);
       setSession(s);
       setSessions((list) => [s, ...list.filter((x) => x.id !== s.id)]);
     } catch (e) { onToast(e.message || "发起答辩失败"); }
@@ -1333,12 +1372,12 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
 }
 
 export function WorkspacePage({ pageKey, projectId, user, activeTenantId, onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant }) {
-  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant, user };
+  // 注意：projectId 必须下发给所有页面组件。此前仅 review/resources/learning 收到该 prop，
+  // 其余页面回退到模块常量 PROJECT_ID（= VITE_PROJECT_ID，默认 demo-project）——
+  // 切换团队后请求仍指向 demo-project，被后端租户校验拦成 403，页面呈现为空。
+  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant, user, projectId };
   const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage, 'student-tasks': StudentTasksPage, 'student-works': StudentWorksPage, 'student-diagnosis': StudentDiagnosisPage, 'student-defense': StudentDefensePage };
   const Page = pages[pageKey] ?? AnalysisPage;
-  if (pageKey === "review" || pageKey === "resources" || pageKey === "learning") {
-    return <Page {...props} projectId={projectId} />;
-  }
   if (pageKey === "settings") {
     return <Page {...props} user={user} activeTenantId={activeTenantId} />;
   }
