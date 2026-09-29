@@ -83,19 +83,19 @@ flowchart LR
 
 | 账号 | 角色 |
 | --- | --- |
-| `teacher` | 指导教师 |
+| `teacher` | 指导教师（`demo-tenant`） |
+| `student1` | 学生（`demo-tenant`） |
 
-演示密码不在公开仓库中展示，请使用项目单独配置的演示凭据。本地运行时需在 `.env.local` 中设置 `VITE_DEMO_PASSWORD_HASH`；GitHub Pages 使用同名构建值对应的仓库变量 `DEMO_PASSWORD_HASH`。
-
-> 当前登录仅用于前端原型演示。密码会在浏览器中计算 SHA-256 后与构建配置比对，但这不能替代服务端身份认证，也不应作为生产环境权限方案。
+登录走后端 JWT 鉴权（`/api/auth/login`，支持刷新令牌续期与登出吊销）。未连接后端时自动进入 `DEMO_MODE`，展示内置示例数据，此时登录不可用。
 
 ## 技术栈
 
 - React 19：页面与交互状态构建；
 - Vite 6：本地开发与生产构建；
+- NestJS 11 + Prisma + PostgreSQL：真实鉴权、多租户隔离与业务数据；
 - Phosphor Icons：界面图标；
 - Noto Sans SC：中文界面字体；
-- Node.js Test Runner：登录、通知、页面映射及托管 Worker 测试。
+- Node.js Test Runner：通知、页面映射及托管 Worker 测试。
 
 ## 本地运行
 
@@ -118,9 +118,9 @@ npm run dev
 
 | 项 | 值 | 说明 |
 | --- | --- | --- |
-| 前端 | **5173** | Vite 默认端口 |
-| 后端 | **8080** | `server/.env` 的 `PORT`，须与前端 `VITE_API_BASE` 一致 |
-| 端口 9000 | ❌ 不可用 | 落在 Windows 动态保留段 8950–9049，绑定直接 `EACCES` |
+| 前端 | **17200** | Vite 开发端口，启动时用 `--port` 指定 |
+| 后端 | **17100** | `server/.env` 的 `PORT`，须与前端 `VITE_PROXY_TARGET` 一致 |
+| 端口选择 | ⚠️ | Windows 动态保留段每次开机都会变化，绑定报 `EACCES` 时先执行 `netsh interface ipv4 show excludedportrange protocol=tcp`（务必看完整列表），改用排除段之外的端口 |
 
 **步骤**
 
@@ -130,18 +130,19 @@ cd server
 npm install
 npx prisma generate && npx prisma migrate deploy && npm run prisma:seed
 
-# 2. 启动后端（:8080）；本地编译请用 .buildtmp 绕过 safe-delete 钩子
-npx tsc -p tsconfig.json --outDir .buildtmp && cp -r .buildtmp/src/. dist/ && node dist/main
-# 健康检查：curl http://localhost:8080/api/health → {"status":"ok","db":"up"}
+# 2. 启动后端（读取 server/.env 的 PORT，当前为 17100）
+npx nest build && node dist/main
+# 健康检查：curl http://localhost:17100/api/health → {"status":"ok","db":"up"}
 
-# 3. 另开终端启动前端（:5173）
+# 3. 另开终端启动前端（:17200），并把代理目标同步到后端端口
 cd ..
-npm run dev          # .env.local 中 VITE_API_BASE=http://localhost:8080/api
+VITE_PROXY_TARGET=http://localhost:17100 npx vite --host 127.0.0.1 --port 17200
+# .env.local 中 VITE_API_BASE=/api，由 Vite 把 /api 转发到后端
 ```
 
-> 不要用 `npm run build` 编译后端：`nest build` 的 `deleteOutDir` 会被 safe-delete 钩子拦截。开发期直接用 `npm run start:dev`（nest watch）更省事。
+> 开发期也可用 `npm run start:dev`（nest watch）启动后端，免手动构建。
 
-**本地账号**（密码均为 `123456`）：`teacher`（教师 / `demo-tenant`）、`student1`（学生 陈晨 / `demo-tenant`）、`teacher2`（教师 / `innovation-tenant`）。前端报「请求失败（500）」多半是后端没起，先 `curl http://localhost:8080/api/health` 验证。
+**本地账号**（密码均为 `123456`）：`teacher`（教师 / `demo-tenant`）、`student1`（学生 陈晨 / `demo-tenant`）、`teacher2`（教师 / `innovation-tenant`）。前端报「无法连接服务器」多半是后端没起，先 `curl http://localhost:17100/api/health` 验证。
 
 > 跨域：后端默认放行 `5173`/`4173`；若用 `--port 3000` 启动前端，需在 `server/.env` 加 `CORS_ORIGINS=http://localhost:3000` 后重启后端。
 
@@ -167,9 +168,12 @@ saixun-web-prototype/
 ├─ scripts/                  # 构建与站点准备脚本
 ├─ src/
 │  ├─ App.jsx                # 应用外壳、导航与通知交互
-│  ├─ LoginScreen.jsx        # 演示登录页
-│  ├─ appState.js            # 登录、通知与页面映射状态逻辑
-│  ├─ pages.jsx              # 各业务页面
+│  ├─ LoginScreen.jsx        # 登录页（后端 JWT 鉴权）
+│  ├─ api.js                 # 后端 API 客户端（令牌管理与请求封装）
+│  ├─ appState.js            # 会话、通知与页面映射状态逻辑
+│  ├─ pages.jsx              # 教师端业务页面
+│  ├─ studentPages.jsx       # 学生端页面
+│  ├─ audio.js               # 录音转码（语音答辩共用）
 │  └─ styles.css             # 全局响应式样式
 ├─ tests/                    # Node 测试
 ├─ worker/index.js           # 静态站点 SPA 回退 Worker
