@@ -22,7 +22,6 @@ import { TenantsModule } from './tenants/tenants.module';
 import { CaseLibraryModule } from './case-library/case-library.module';
 import { SpeechModule } from './speech/speech.module';
 import { RuntimeConfigModule } from './config/config.module';
-import { DiagnosticsModule } from './diagnostics/diagnostics.module';
 
 /**
  * 根模块：P0.1 接入全局配置、Prisma、健康检查；P0.3 接入真实鉴权（Auth/Users）；
@@ -57,8 +56,6 @@ import { DiagnosticsModule } from './diagnostics/diagnostics.module';
     CaseLibraryModule,
     SpeechModule,
     RuntimeConfigModule,
-    // 临时诊断模块（排障用，定位完即删）
-    DiagnosticsModule,
   ],
   // Phase C-2: 全局注册节流守卫（forRoot 仅声明限流器，须显式绑定 guard）
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -117,7 +117,30 @@ npm run workbuddy:start     # 自愈（库缺失则建库+灌种子）→ 启动
 
 ---
 
-## 六、已知限制
+## 六、平台行为注意点
+
+### 网关会注入自己的 Authorization 头（**踩过大坑**）
+
+托管网关会在**每一个请求**上注入它自己的 `Authorization: Bearer eyJ…`
+（同时注入 `x-space-key` 等）。因此：
+
+- 后端**不能**把标准 `Authorization` 作为唯一的取令牌通道——否则永远取到网关的令牌，
+  验签必然失败，表现为「登录成功，但所有带 token 的请求一律 401」，
+  而且**连不带凭证的请求也会报 invalid signature**。
+- 本项目的做法：优先读专属头 `X-Saixun-Auth`（前端同时发送），其次 `saixun_token`
+  Cookie，最后才回退标准 Bearer。详见 `server/src/auth/jwt.strategy.ts`。
+- 若你新增自定义请求头，请确认它不会与网关注入的头冲突；
+  实测普通自定义头（如 `x-custom-probe`）会被原样透传。
+
+### 网关注入不了的环境变量
+
+平台只注入 `PORT`，其余（`JWT_SECRET`、AI Key 等）都没有注入入口，
+因此 `scripts/workbuddy-start.mjs` 会**强制**设置一个演示专用的 `JWT_SECRET`
+（可用 `WORKBUDDY_JWT_SECRET` 覆盖），避免实例重建后旧令牌整体失效。
+
+---
+
+## 七、已知限制
 
 1. **数据非永久**：E2B 沙箱被回收后磁盘清空，运行时改动不保证长期留存；
    启动自愈可保证「初始演示数据始终存在」。
@@ -127,7 +150,7 @@ npm run workbuddy:start     # 自愈（库缺失则建库+灌种子）→ 启动
 
 ---
 
-## 七、本地验证
+## 八、本地验证
 
 ```bash
 # 构造上传目录 → 完整跑一遍平台会执行的安装流程
