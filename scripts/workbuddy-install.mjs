@@ -81,15 +81,33 @@ function runSoft(cwd, args, label) {
   return !r.error && r.status === 0;
 }
 
-/** 安装依赖：已就绪则跳过；npm ci 失败时退回 npm install（可断点续装） */
+/**
+ * 安装依赖。
+ * 策略（按沙箱实际状态选，实测踩过坑）：
+ *   · node_modules 不存在（首次部署）→ `npm ci`：按锁文件精确安装，最快最稳；
+ *   · node_modules 已存在（平台复用沙箱后再发布）→ `npm install`：**就地调和**，
+ *     不整棵删除。因为 `npm ci` 会先清空 node_modules，实测在复用的沙箱里这一步
+ *     会失败（首次部署同一命令却成功）。
+ * 统一带 --loglevel=error：平台回传的错误信息会被截断，npm 的 deprecation 警告
+ * 会把真正的失败行挤掉，必须压低噪音。
+ */
+const NPM_FLAGS = ['--include=dev', '--no-audit', '--no-fund', '--loglevel=error'];
+
 function installDeps(cwd, label) {
   if (depsReady()) {
     console.log(`\n[workbuddy:install] ▸ ${label}\n[workbuddy:install]   依赖已就绪且锁文件未变 → 跳过安装（复用沙箱）`);
     return;
   }
-  if (runSoft(cwd, ['ci', '--include=dev'], label)) return;
-  console.warn('[workbuddy:install]   npm ci 失败，退回 npm install --include=dev');
-  run(cwd, ['install', '--include=dev'], `${label}（npm install 回退）`);
+  const hasModules = existsSync(path.join(cwd, 'node_modules'));
+  if (hasModules) {
+    if (runSoft(cwd, ['install', ...NPM_FLAGS], `${label}（npm install 就地调和）`)) return;
+    console.warn('[workbuddy:install]   npm install 失败，退回 npm ci');
+    run(cwd, ['ci', ...NPM_FLAGS], `${label}（npm ci 回退）`);
+    return;
+  }
+  if (runSoft(cwd, ['ci', ...NPM_FLAGS], `${label}（npm ci）`)) return;
+  console.warn('[workbuddy:install]   npm ci 失败，退回 npm install');
+  run(cwd, ['install', ...NPM_FLAGS], `${label}（npm install 回退）`);
 }
 
 console.log('[workbuddy:install] Node ' + process.version);
