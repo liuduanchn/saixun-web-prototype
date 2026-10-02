@@ -23,10 +23,14 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverDir = path.join(root, 'server');
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// Windows 上必须 shell: true：Node 18.20+/20.12+/22 起，spawn 一个 .cmd/.bat
+// 而不经过 shell 会直接抛 EINVAL（CVE-2024-27980 的修复引入的行为）。
+// 这里传给 npm 的都是固定短参数（无空格、无用户输入），走 shell 无注入风险。
+const SPAWN_OPTS = { shell: true };
 
 function run(cwd, args, label) {
   console.log(`\n[workbuddy:install] ▸ ${label}\n[workbuddy:install]   cwd=${cwd}\n[workbuddy:install]   npm ${args.join(' ')}`);
-  const r = spawnSync(NPM, args, { cwd, stdio: 'inherit', env: process.env, shell: false });
+  const r = spawnSync(NPM, args, { cwd, stdio: 'inherit', env: process.env, ...SPAWN_OPTS });
   if (r.error) {
     console.error(`[workbuddy:install] ✗ 无法启动 npm：${r.error.message}`);
     process.exit(1);
@@ -41,7 +45,7 @@ function run(cwd, args, label) {
 /** 同 run，但失败返回 false 而不退出，供允许降级的步骤使用。 */
 function runSoft(cwd, args, label) {
   console.log(`\n[workbuddy:install] ▸ ${label}\n[workbuddy:install]   npm ${args.join(' ')}`);
-  const r = spawnSync(NPM, args, { cwd, stdio: 'inherit', env: process.env, shell: false });
+  const r = spawnSync(NPM, args, { cwd, stdio: 'inherit', env: process.env, ...SPAWN_OPTS });
   return !r.error && r.status === 0;
 }
 

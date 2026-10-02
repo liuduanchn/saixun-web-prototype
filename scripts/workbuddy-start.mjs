@@ -19,10 +19,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverDir = path.join(root, 'server');
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// 见 workbuddy-install.mjs 的说明：Windows 上 spawn .cmd 必须经过 shell（否则 EINVAL）
+const SPAWN_OPTS = { shell: true };
 
 function run(args, label) {
   console.log(`[workbuddy:start] ▸ ${label}`);
-  const r = spawnSync(NPM, args, { cwd: serverDir, stdio: 'inherit', env: process.env, shell: false });
+  const r = spawnSync(NPM, args, { cwd: serverDir, stdio: 'inherit', env: process.env, ...SPAWN_OPTS });
   if (r.error || r.status !== 0) {
     console.error(`[workbuddy:start] ✗ ${label} 失败`);
     process.exit(r.status ?? 1);
