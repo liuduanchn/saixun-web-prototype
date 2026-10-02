@@ -115,7 +115,24 @@ installDeps(root, '安装前端依赖');
 installDeps(serverDir, '安装后端依赖（含 devDependencies，构建必需）');
 writeFileSync(STAMP, depsFingerprint());
 run(serverDir, ['run', 'prisma:generate'], '生成 Prisma Client');
-run(serverDir, ['run', 'prisma:deploy'], '应用 SQLite 迁移');
+
+// ── 数据库初始化：**仅当库不存在时**才做 ──────────────────────────────
+// 为什么加这个判断（实测踩坑）：
+//   平台会复用已记录的沙箱，重新发布时**上一次发布的实例仍在运行、占着 SQLite 文件**，
+//   此时执行 `prisma migrate deploy` 会直接报
+//   「SQLite database error: database is locked」而整体失败。
+// 因此：
+//   · 库不存在（首次部署）→ 建库 + 灌种子，此时不可能有实例在跑，无锁冲突；
+//   · 库已存在（重新发布）→ 完全跳过，既不冲突，也**保留已有演示数据**。
+// 若将来改了 schema 需要重新发布并迁移，应先下线应用或停掉实例再发布。
+const dbPath = path.join(serverDir, 'prisma', 'saixun.db');
+if (existsSync(dbPath)) {
+  console.log('\n[workbuddy:install] ▸ 数据库初始化\n[workbuddy:install]   已存在 SQLite 库 → 跳过迁移与种子（避免与运行中实例争锁，并保留现有数据）');
+} else {
+  run(serverDir, ['run', 'prisma:deploy'], '应用 SQLite 迁移（空库）');
+  run(serverDir, ['run', 'prisma:seed'], '灌入主演示数据（3 团队 / 5 赛项）');
+  run(serverDir, ['run', 'prisma:seed:instances'], '灌入实例项目数据（6 团队 / 27 账号）');
+}
 
 // nest build 的 deleteOutDir 会被本机 safe-delete 钩子拦截（沙箱内无此钩子，正常）。
 // 失败时回退到等价的 tsc 编译；两者产物路径一致，都是 dist/main.js
@@ -131,8 +148,6 @@ if (!runSoft(serverDir, ['run', 'build'], '编译后端 (nest build)')) {
   );
 }
 
-run(serverDir, ['run', 'prisma:seed'], '灌入主演示数据（3 团队 / 5 赛项）');
-run(serverDir, ['run', 'prisma:seed:instances'], '灌入实例项目数据（6 团队 / 27 账号）');
 run(root, ['run', 'build:workbuddy'], '构建前端静态产物 (vite build --mode workbuddy)');
 
 console.log('\n[workbuddy:install] ✓ 全部完成');

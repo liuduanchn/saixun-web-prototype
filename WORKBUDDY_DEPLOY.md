@@ -29,7 +29,7 @@
 ## 二、一键构建与启动
 
 ```bash
-npm run workbuddy:install   # 装依赖 → prisma generate → migrate deploy → nest build → 两个 seed → 构建前端
+npm run workbuddy:install   # 装依赖 → prisma generate → 建库+灌种子（仅当库不存在）→ nest build → 构建前端
 npm run workbuddy:start     # 自愈（库缺失则建库+灌种子）→ 启动单端口服务
 ```
 
@@ -40,6 +40,13 @@ npm run workbuddy:start     # 自愈（库缺失则建库+灌种子）→ 启动
 
 - `npm ci` **必须带 `--include=dev`**。server 侧的 `prisma`、`nest` CLI、`ts-node`
   全在 `devDependencies`；若环境设了 `NODE_ENV=production`，默认 `npm ci` 会跳过它们。
+- **数据库初始化只在库不存在时执行**。平台会复用已记录的沙箱，重新发布时上一次的
+  实例仍在运行并占着 SQLite 文件，此时做 `prisma migrate deploy` 会直接报
+  `database is locked` 而整体失败；因此库已存在就完全跳过 —— 既避开争锁，
+  也**保留已有演示数据**。改了 schema 又需要迁移时，先下线应用再发布。
+- **依赖安装带缓存戳**：锁文件未变且两处 `node_modules` 都在时直接跳过，
+  重新发布因此明显更快。`npm ci` 仅用于全新沙箱，其余场景用 `npm install` 就地调和
+  （`npm ci` 会清空依赖树，在复用沙箱中实测会失败）。
 - 两个 seed **必须按序**：`seed.ts` 先，`seed-instance-projects.ts` 后
   （后者依赖前者建好的既有 `teacher` 账号）。
 - seed 与后端进程的 cwd 都固定为 `server/`，这样两者写读的 `uploads/` 才是同一目录。
