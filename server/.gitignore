@@ -9,10 +9,14 @@ uploads
 
 # SQLite 运行期数据文件（workbuddyDeploy 分支）：
 # 库由构建/启动阶段用 prisma migrate deploy + seed 在目标环境生成，不入库。
-# -shm/-wal 是 WAL 模式的附加文件，同样不要提交。
+# 三条规则覆盖全部变体：
+#   prisma/*.db      → saixun.db
+#   prisma/*.db-*    → saixun.db-shm / saixun.db-wal（WAL 模式的附加文件）
+#   prisma/*.db.*    → saixun.db.bak 等备份副本
+# 最后一条是事后补的：曾因只忽略 *.db 而把改名备份的 *.db.bak 误提交进分支。
 prisma/*.db
-prisma/*.db-shm
-prisma/*.db-wal
+prisma/*.db-*
+prisma/*.db.*
 
 # 本地/线上运行时密钥配置（三级优先级第 2 级），仓库只提交 runtime.example.json
 config/runtime.json
