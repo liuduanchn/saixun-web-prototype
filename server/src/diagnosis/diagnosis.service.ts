@@ -12,7 +12,7 @@ import { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LearningService } from '../learning/learning.service';
 import { CaseLibraryService } from '../case-library/case-library.service';
-import { Severity, DiagnosisStatus } from '@prisma/client';
+import { Severity, DiagnosisStatus } from '../common/enums';
 import { parsePage, toPaged, PageQuery, Paged } from '../common/pagination';
 import { extractText } from '../common/text-extract';
 

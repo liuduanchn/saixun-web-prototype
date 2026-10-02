@@ -11,6 +11,7 @@ import { JwtPayload } from '../auth/auth.service';
 import { LearningService } from '../learning/learning.service';
 import { extractJson } from '../common/llm.util';
 import { extractText } from '../common/text-extract';
+import { parseStrArray, toJson } from '../common/json';
 
 export interface ScorePointDraft {
   name: string;
@@ -37,14 +38,32 @@ export class CriteriaService {
     return project;
   }
 
+  /**
+   * 出口统一还原：ScorePoint.abilityTags 在库中以 JSON 文本存储（SQLite 不支持标量数组），
+   * 返回给上层/前端前必须还原为字符串数组，否则前端 `abilityTags.join()` 会抛 TypeError。
+   */
+  private present<T extends { scorePoints?: Array<{ abilityTags: unknown }> }>(
+    criterion: T,
+  ): T {
+    if (!criterion?.scorePoints) return criterion;
+    return {
+      ...criterion,
+      scorePoints: criterion.scorePoints.map((sp) => ({
+        ...sp,
+        abilityTags: parseStrArray(sp.abilityTags),
+      })),
+    } as T;
+  }
+
   /** 列出某项目的评分要素与评分点 */
   async list(projectId: string, user: JwtPayload) {
     await this.assertProjectTenant(projectId, user.tenantId);
-    return this.prisma.criterion.findMany({
+    const rows = await this.prisma.criterion.findMany({
       where: { projectId },
       include: { scorePoints: true },
       orderBy: { id: 'asc' },
     });
+    return rows.map((row) => this.present(row));
   }
 
   /**
@@ -158,9 +177,9 @@ export class CriteriaService {
           scorePoints: {
             create: (c.scorePoints || []).map((sp) => ({
               name: String(sp.name || '未命名评分点'),
-              abilityTags: Array.isArray(sp.abilityTags)
-                ? sp.abilityTags.map(String).slice(0, 6)
-                : [],
+              abilityTags: toJson(
+                Array.isArray(sp.abilityTags) ? sp.abilityTags.map(String).slice(0, 6) : [],
+              ),
             })),
           },
         },
@@ -177,7 +196,7 @@ export class CriteriaService {
       payload: { points },
     });
 
-    return created;
+    return created.map((c) => this.present(c));
   }
 
   async removeCriterion(id: string, user: JwtPayload) {

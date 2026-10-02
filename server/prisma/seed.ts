@@ -1,5 +1,7 @@
 import 'dotenv/config';
-import { PrismaClient, Severity, ResourceType } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { Severity, ResourceType } from '../src/common/enums';
+import { toJson } from '../src/common/json';
 import * as bcrypt from 'bcryptjs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -34,7 +36,7 @@ async function seedProjectWithCriteria(
       });
       for (const p of c.points) {
         await prisma.scorePoint.create({
-          data: { criterionId: criterion.id, name: p, abilityTags: [p] },
+          data: { criterionId: criterion.id, name: p, abilityTags: toJson([p]) },
         });
       }
     }
@@ -244,8 +246,8 @@ async function seedDefenseSession(projectId: string) {
     data: {
       projectId,
       round: 3,
-      transcript: transcript as any,
-      evaluations: evaluations as any,
+      transcript: toJson(transcript),
+      evaluations: toJson(evaluations),
     },
   });
 }
@@ -287,7 +289,7 @@ async function seedCaseLibrary(
   const count = await prisma.caseLibrary.count({ where: { tenantId } });
   if (count >= cases.length) return;
   for (const c of cases) {
-    await prisma.caseLibrary.create({ data: { tenantId, projectId, title: c.title, content: c.content, category: c.category, tags: c.tags } });
+    await prisma.caseLibrary.create({ data: { tenantId, projectId, title: c.title, content: c.content, category: c.category, tags: toJson(c.tags) } });
   }
 }
 
@@ -310,7 +312,7 @@ async function seedStudentEvents(studentId: string, projectName: string, isUploa
   }
   for (const e of events) {
     await prisma.learningEvent.create({
-      data: { userId: studentId, type: e.type, payload: e.payload as any, createdAt: new Date(base - e.ago * day) },
+      data: { userId: studentId, type: e.type, payload: toJson(e.payload), createdAt: new Date(base - e.ago * day) },
     });
   }
 }
@@ -402,7 +404,7 @@ async function main() {
       });
       for (const p of c.points) {
         await prisma.scorePoint.create({
-          data: { criterionId: criterion.id, name: p, abilityTags: [p] },
+          data: { criterionId: criterion.id, name: p, abilityTags: toJson([p]) },
         });
       }
     }
@@ -466,7 +468,7 @@ async function main() {
           data: {
             userId: teacherUser.id,
             type: e.type,
-            payload: e.payload as any,
+            payload: toJson(e.payload),
             createdAt: new Date(base - e.ago * day),
           },
         });
@@ -647,7 +649,7 @@ async function main() {
       });
       for (const p of c.points) {
         await prisma.scorePoint.create({
-          data: { criterionId: criterion.id, name: p, abilityTags: [p] },
+          data: { criterionId: criterion.id, name: p, abilityTags: toJson([p]) },
         });
       }
     }
@@ -698,7 +700,7 @@ async function main() {
     ];
     for (const e of events3) {
       await prisma.learningEvent.create({
-        data: { userId: teacher2.id, type: e.type, payload: e.payload as any, createdAt: new Date(base - e.ago * day) },
+        data: { userId: teacher2.id, type: e.type, payload: toJson(e.payload), createdAt: new Date(base - e.ago * day) },
       });
     }
   }
@@ -794,7 +796,7 @@ async function main() {
           title: c.title,
           content: c.content,
           category: c.category,
-          tags: c.tags,
+          tags: toJson(c.tags),
         },
       });
     }
@@ -946,7 +948,7 @@ async function main() {
     ];
     for (const e of eventsInfo) {
       await prisma.learningEvent.create({
-        data: { userId: teacher3.id, type: e.type, payload: e.payload as any, createdAt: new Date(base - e.ago * day) },
+        data: { userId: teacher3.id, type: e.type, payload: toJson(e.payload), createdAt: new Date(base - e.ago * day) },
       });
     }
   }
@@ -995,7 +997,7 @@ async function main() {
       });
       for (const p of c.points) {
         await prisma.scorePoint.create({
-          data: { criterionId: criterion.id, name: p, abilityTags: [p] },
+          data: { criterionId: criterion.id, name: p, abilityTags: toJson([p]) },
         });
       }
     }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../auth/auth.service';
+import { parseJson, toJson } from '../common/json';
 
 export interface LearningEventView {
   id: string;
@@ -71,7 +72,11 @@ export class LearningService {
       take: 50,
     });
     return list.map((ev) => {
-      const { title, detail } = this.titleOf(ev as unknown as { type: string; payload: Record<string, unknown> });
+      // payload 在库中以 JSON 文本存储（SQLite 不支持 Json 类型），先还原再交给 titleOf
+      const { title, detail } = this.titleOf({
+        type: ev.type,
+        payload: parseJson<Record<string, unknown>>(ev.payload, {}),
+      });
       return {
         id: ev.id,
         type: ev.type,
@@ -108,7 +113,7 @@ export class LearningService {
       data: {
         userId: input.userId,
         type: input.type,
-        payload: (input.payload ?? {}) as object,
+        payload: toJson(input.payload ?? {}),
       },
     });
   }

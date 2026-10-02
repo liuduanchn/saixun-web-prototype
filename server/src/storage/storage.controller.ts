@@ -11,6 +11,7 @@ import { createReadStream, existsSync } from 'fs';
 import { join, resolve, normalize, sep } from 'path';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
+import { storageRoot } from './storage-root';
 
 /**
  * 提供已上传文件的访问：GET /api/files/:tenant/:key...
@@ -19,7 +20,7 @@ import { JwtPayload } from '../auth/auth.service';
  */
 @Controller('files')
 export class StorageController {
-  private readonly root = join(process.cwd(), 'uploads');
+  private readonly root = storageRoot();
 
   @Get('*path')
   serve(@Req() req: any, @CurrentUser() user: JwtPayload, @Res() res: Response) {

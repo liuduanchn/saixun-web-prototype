@@ -7,9 +7,17 @@ dist/
 .env
 .env.*
 !.env.example
+# WorkBuddy 构建变量（只含相对路径与演示账号，不含任何密钥），需随仓库提交
+!.env.workbuddy
 
 .DS_Store
 Thumbs.db
 
 # 前端构建校验输出（vite build --outDir dist-check）
 dist-check/
+
+# ── workbuddyDeploy 分支 ──────────────────────────────────────────────
+# 本地密钥配置（三级优先级中的第二级），绝不入库；仓库只提交 *.example.json
+server/config/runtime.json
+# 发布到 WorkBuddy 用的上传目录由 scripts/prepare-workbuddy-deploy.mjs 生成
+workbuddy-deploy/

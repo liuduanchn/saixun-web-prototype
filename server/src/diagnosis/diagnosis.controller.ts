@@ -11,7 +11,7 @@ import {
 import { DiagnosisService } from './diagnosis.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
-import { DiagnosisStatus } from '@prisma/client';
+import { DiagnosisStatus } from '../common/enums';
 
 @Controller('diagnosis')
 export class DiagnosisController {

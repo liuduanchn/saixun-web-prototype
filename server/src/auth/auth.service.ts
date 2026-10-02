@@ -5,7 +5,8 @@ import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role, User } from '@prisma/client';
+import { User } from '@prisma/client';
+import { Role } from '../common/enums';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 

@@ -10,7 +10,7 @@
  *   5. 资源知识库：条数 4–6 条
  *   6. 学习记录 / 通知：丰富度分级
  */
-import { ResourceType, TaskStatus, DiagnosisStatus } from '@prisma/client';
+import { ResourceType, TaskStatus, DiagnosisStatus } from '../src/common/enums';
 
 export interface ExtraDefenseRound {
   question: string;

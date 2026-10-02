@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../auth/auth.service';
+import { parseStrArray } from '../common/json';
 
 export interface ReviewSummary {
   metrics: {
@@ -138,7 +139,7 @@ export class ReviewService {
       title: c.title,
       content: c.content,
       category: c.category,
-      tags: c.tags,
+      tags: parseStrArray(c.tags),
     }));
 
     return { templates, issues, goodPractices };

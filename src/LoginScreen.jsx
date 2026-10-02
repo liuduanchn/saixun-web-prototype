@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Eye, EyeSlash, LockKey, SignIn, Sparkle, User } from "@phosphor-icons/react";
 import { api, DEMO_MODE } from "./api.js";
-import { saveSession } from "./appState.js";
+import { saveSession, loginWithStorage } from "./appState.js";
 
 export function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("teacher");
@@ -15,10 +15,27 @@ export function LoginScreen({ onLogin }) {
     setSubmitting(true);
     setError("");
     try {
-      const user = await api.auth.login(username, password);
-      if (!saveSession(window.localStorage, user)) {
-        setError("无法保存登录状态，请检查浏览器存储权限");
-        return;
+      let user;
+      if (DEMO_MODE) {
+        // 演示模式（未配置 VITE_API_BASE，无后端可用）：走本地 SHA-256 比对，
+        // 期望哈希由构建期注入 VITE_DEMO_PASSWORD_HASH。
+        const result = await loginWithStorage(
+          window.localStorage,
+          username,
+          password,
+          import.meta.env.VITE_DEMO_PASSWORD_HASH,
+        );
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        user = result.user;
+      } else {
+        user = await api.auth.login(username, password);
+        if (!saveSession(window.localStorage, user)) {
+          setError("无法保存登录状态，请检查浏览器存储权限");
+          return;
+        }
       }
       onLogin(user);
     } catch (err) {

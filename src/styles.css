@@ -1,10 +1,8 @@
-@import "@fontsource/noto-sans-sc/400.css";
-@import "@fontsource/noto-sans-sc/500.css";
-@import "@fontsource/noto-sans-sc/600.css";
-@import "@fontsource/noto-sans-sc/700.css";
-
 :root {
-  font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  /* workbuddyDeploy 分支：移除 @fontsource/noto-sans-sc（4 个字体切片约 23MB，
+     占打包体积绝大部分），改用系统字体栈，体积从约 26MB 降到约 3MB。
+     失去的是跨设备字形完全一致，优先保证演示站的加载速度与托管配额。 */
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans SC", sans-serif;
   color: #f4f8ff;
   background: #03132b;
   font-synthesis: none;

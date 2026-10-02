@@ -17,7 +17,9 @@
  * 运行：npx ts-node prisma/seed-instance-projects.ts
  */
 import 'dotenv/config';
-import { PrismaClient, TaskStatus } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { TaskStatus } from '../src/common/enums';
+import { parseJson, toJson } from '../src/common/json';
 import * as bcrypt from 'bcryptjs';
 import { mkdir, writeFile, stat } from 'fs/promises';
 import { join } from 'path';
@@ -122,12 +124,12 @@ function buildDefenseData(s: ProfileDefenseSession) {
   return {
     round: done ? s.rounds.length : s.rounds.length + 1,
     title: s.title,
-    transcript: transcript as never,
-    evaluations: {
+    transcript: toJson(transcript),
+    evaluations: toJson({
       maxRounds: s.maxRounds,
       rounds: s.rounds.map((r, idx) => ({ round: idx + 1, scores: r.scores, comment: r.comment })),
       ...(s.overall ? { overall: s.overall, done: true } : { done: false }),
-    } as never,
+    }),
   };
 }
 
@@ -200,7 +202,7 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
       bump('created', '评分维度');
       for (const pt of c.points) {
         await prisma.scorePoint.create({
-          data: { criterionId: criterion.id, name: pt.name, abilityTags: [pt.name] },
+          data: { criterionId: criterion.id, name: pt.name, abilityTags: toJson([pt.name]) },
         });
         bump('created', '评分点');
       }
@@ -391,7 +393,7 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
           title: c.title,
           content: c.content,
           category: c.category,
-          tags: c.tags,
+          tags: toJson(c.tags),
           createdAt: ago(25),
         },
       });
@@ -416,7 +418,7 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
     });
     const titleSet = new Set(
       existingEvents
-        .map((e) => (e.payload as Record<string, unknown> | null)?.title)
+        .map((e) => parseJson<Record<string, unknown>>(e.payload, {}).title)
         .filter((t): t is string => typeof t === 'string'),
     );
 
@@ -441,7 +443,7 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
       }
       for (const e of plan) {
         await prisma.learningEvent.create({
-          data: { userId: u.id, type: e.type, payload: e.payload as never, createdAt: ago(e.d) },
+          data: { userId: u.id, type: e.type, payload: toJson(e.payload), createdAt: ago(e.d) },
         });
         bump('created', '学习记录');
       }
@@ -458,7 +460,7 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
         const t = e.payload.title as string;
         if (titleSet.has(t)) continue;
         await prisma.learningEvent.create({
-          data: { userId: u.id, type: e.type, payload: e.payload as never, createdAt: ago(e.d) },
+          data: { userId: u.id, type: e.type, payload: toJson(e.payload), createdAt: ago(e.d) },
         });
         bump('created', '学习记录');
       }
@@ -525,7 +527,7 @@ async function seedExistingTeacherFeed(p: ProjectSeed, profile: ProjectProfile) 
     select: { payload: true },
   });
   const titles = new Set(
-    events.map((e) => (e.payload as Record<string, unknown> | null)?.title).filter((t): t is string => typeof t === 'string'),
+    events.map((e) => parseJson<Record<string, unknown>>(e.payload, {}).title).filter((t): t is string => typeof t === 'string'),
   );
   const plan: Array<{ type: string; payload: Record<string, unknown>; d: number }> = [
     { type: 'CRITERIA_PARSED', payload: { title: `赛项解析：${p.projectName}`, points: pointTotal }, d: 21 },
@@ -538,7 +540,7 @@ async function seedExistingTeacherFeed(p: ProjectSeed, profile: ProjectProfile) 
     const t = e.payload.title as string;
     if (titles.has(t)) continue;
     await prisma.learningEvent.create({
-      data: { userId: teacher.id, type: e.type, payload: e.payload as never, createdAt: ago(e.d) },
+      data: { userId: teacher.id, type: e.type, payload: toJson(e.payload), createdAt: ago(e.d) },
     });
     bump('created', 'teacher 学习记录');
   }

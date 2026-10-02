@@ -12,7 +12,7 @@
  * 说明：珍珠项目的团队成员姓名取自文档原文；其余 5 份文档未给出个人姓名，
  *      成员姓名为演示用占位名，如与真实参赛人员不符可按需替换。
  */
-import { Severity, ResourceType, TaskStatus, Stage } from '@prisma/client';
+import { Severity, ResourceType, TaskStatus, Stage } from '../src/common/enums';
 
 export interface DiagSeed {
   matchScore: number;

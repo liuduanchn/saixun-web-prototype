@@ -1,66 +1,34 @@
-// 赛训智舱 数据库模型 (Prisma + PostgreSQL)
+// 赛训智舱 数据库模型 (Prisma + SQLite)
 // P0.2：完整建模业务、评分、作品、诊断、答辩、资源、学习、通知等实体。
 // 多租户以 Tenant 为隔离根；所有业务表均带 tenantId 或经 Project 间接归属。
+//
+// ── workbuddyDeploy 分支说明 ─────────────────────────────────────────────
+// 本分支用于把整个应用自包含地部署到 WorkBuddy 托管沙箱（单端口 + 内置 SQLite）。
+// Prisma 6 的 SQLite 连接器不支持 enum / Json / 标量列表（String[]），因此：
+//   · 原 6 个 enum 一律降级为 String，取值保持全大写字面量不变；
+//   · 原 Json 字段（settings / transcript / evaluations / payload）改为 String，
+//     以 JSON 文本存取，序列化边界统一收口到 src/common/json.ts；
+//   · 原 String[]（abilityTags / tags）改为 String，存 JSON 数组文本。
+// 类型层面的枚举替身见 src/common/enums.ts。
+// SQLite 为单文件库，url 用字面量而非 env("DATABASE_URL")，
+// 路径相对于本文件所在目录解析 → server/prisma/saixun.db。
+// ────────────────────────────────────────────────────────────────────────
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-enum Role {
-  OWNER
-  TEACHER
-  STUDENT
-  MEMBER
-}
-
-enum Stage {
-  UNDERSTAND // 赛项理解
-  DESIGN     // 方案设计
-  PROTOTYPE  // 原型开发
-  POLISH     // 作品打磨
-  DEFENSE    // 模拟答辩
-  REVIEW     // 赛后复盘
-}
-
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  IN_REVIEW
-  NEEDS_FIX
-  DONE
-}
-
-enum Severity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-enum DiagnosisStatus {
-  PENDING
-  CONFIRMED
-  REJECTED
-}
-
-enum ResourceType {
-  TEMPLATE
-  CASE
-  QUESTION_BANK
-  MATERIAL
+  provider = "sqlite"
+  url      = "file:./saixun.db"
 }
 
 model Tenant {
   id        String   @id @default(cuid())
   name      String
   createdAt DateTime @default(now())
-  // 租户级配置（JSON）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName
-  settings  Json?
+  // 租户级配置（JSON 文本）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName
+  settings  String?
   users     User[]
   projects  Project[]
   members   Membership[]
@@ -74,7 +42,8 @@ model Membership {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  role      Role     @default(MEMBER)
+  // 原 enum Role：OWNER | TEACHER | STUDENT | MEMBER
+  role      String   @default("MEMBER")
   createdAt DateTime @default(now())
 
   @@unique([userId, tenantId])
@@ -90,7 +59,8 @@ model User {
   username       String
   passwordHash   String
   name           String
-  role           Role     @default(STUDENT)
+  // 原 enum Role
+  role           String   @default("STUDENT")
   createdAt      DateTime @default(now())
 
   ownedTasks       Task[]          @relation("TaskOwner")
@@ -111,7 +81,8 @@ model Project {
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
   name         String
   competition  String
-  currentStage Stage    @default(UNDERSTAND)
+  // 原 enum Stage：UNDERSTAND | DESIGN | PROTOTYPE | POLISH | DEFENSE | REVIEW
+  currentStage String   @default("UNDERSTAND")
   createdAt    DateTime @default(now())
 
   criteria         Criterion[]
@@ -139,7 +110,8 @@ model ScorePoint {
   criterionId String
   criterion   Criterion @relation(fields: [criterionId], references: [id])
   name        String
-  abilityTags String[] @default([])
+  // 原 String[]：以 JSON 数组文本存取，出口统一经 parseStrArray 还原
+  abilityTags String   @default("[]")
 
   tasks     Task[]      @relation("TaskScorePoints")
   diagnoses Diagnosis[]
@@ -155,7 +127,8 @@ model Task {
   ownerId   String?
   owner     User?      @relation("TaskOwner", fields: [ownerId], references: [id])
   dueDate   DateTime?
-  status    TaskStatus @default(TODO)
+  // 原 enum TaskStatus：TODO | IN_PROGRESS | IN_REVIEW | NEEDS_FIX | DONE
+  status    String     @default("TODO")
   done      Boolean    @default(false)
   scorePoints ScorePoint[] @relation("TaskScorePoints")
   createdAt DateTime   @default(now())
@@ -186,10 +159,12 @@ model Diagnosis {
   scorePointId  String
   scorePoint    ScorePoint     @relation(fields: [scorePointId], references: [id])
   matchScore    Float
-  severity      Severity
+  // 原 enum Severity：LOW | MEDIUM | HIGH | CRITICAL
+  severity      String
   issues        String
   suggestions   String
-  status        DiagnosisStatus @default(PENDING)
+  // 原 enum DiagnosisStatus：PENDING | CONFIRMED | REJECTED
+  status        String         @default("PENDING")
   createdAt     DateTime       @default(now())
 
   @@index([workVersionId])
@@ -200,8 +175,10 @@ model DefenseSession {
   projectId  String
   project    Project  @relation(fields: [projectId], references: [id])
   round      Int      @default(1)
-  transcript Json
-  evaluations Json
+  // 原 Json：对话记录，以 JSON 文本存取
+  transcript String
+  // 原 Json：评分与轮次状态，以 JSON 文本存取
+  evaluations String
   createdAt  DateTime @default(now())
   title     String?
 
@@ -212,7 +189,8 @@ model Resource {
   id          String       @id @default(cuid())
   projectId   String
   project     Project      @relation(fields: [projectId], references: [id])
-  type        ResourceType @default(MATERIAL)
+  // 原 enum ResourceType：TEMPLATE | CASE | QUESTION_BANK | MATERIAL
+  type        String       @default("MATERIAL")
   name        String
   description String?
   fileRef     String?
@@ -227,7 +205,8 @@ model LearningEvent {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   type      String
-  payload   Json
+  // 原 Json：事件载荷，以 JSON 文本存取
+  payload   String
   createdAt DateTime @default(now())
 
   @@index([userId])
@@ -247,15 +226,17 @@ model Notification {
   @@index([userId])
 }
 
-// 案例沉淀库：用于检索增强生成（RAG）。检索基于 Postgres 原生全文检索
-// （to_tsvector / plainto_tsquery，core 功能，无需 pgvector 扩展）。
+// 案例沉淀库：用于检索增强生成（RAG）。
+// 注意：原实现注释提到 Postgres 全文检索，但实际检索走 Prisma findMany（无原生 SQL），
+// 因此迁移到 SQLite 无需改写查询。
 model CaseLibrary {
   id        String   @id @default(cuid())
   tenantId  String
   title     String
   content   String
   category  String   @default("通用")
-  tags      String[] @default([])
+  // 原 String[]：以 JSON 数组文本存取
+  tags      String   @default("[]")
   projectId String?
   createdAt DateTime @default(now())
 

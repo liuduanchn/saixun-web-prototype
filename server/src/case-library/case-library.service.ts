@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { parseStrArray, toJson } from '../common/json';
 import { z } from 'zod';
 
 const CreateCaseSchema = z.object({
@@ -30,14 +31,20 @@ function bigrams(s: string): Set<string> {
 export class CaseLibraryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** 出口统一还原：tags 在库中以 JSON 文本存储，返回前还原为字符串数组 */
+  private present<T extends { tags: unknown }>(row: T) {
+    return { ...row, tags: parseStrArray(row.tags) };
+  }
+
   async create(input: unknown, tenantId: string) {
     const parsed = CreateCaseSchema.safeParse(input);
     if (!parsed.success)
       throw new BadRequestException(parsed.error.issues[0]?.message ?? '参数错误');
     const { title, content, category, tags, projectId } = parsed.data;
-    return this.prisma.caseLibrary.create({
-      data: { tenantId, title, content, category, tags, projectId: projectId ?? null },
+    const created = await this.prisma.caseLibrary.create({
+      data: { tenantId, title, content, category, tags: toJson(tags), projectId: projectId ?? null },
     });
+    return this.present(created);
   }
 
   /**
@@ -70,14 +77,15 @@ export class CaseLibraryService {
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
-    return scored.map((x) => x.c);
+    return scored.map((x) => this.present(x.c));
   }
 
   async findByTenant(tenantId: string, projectId?: string) {
-    return this.prisma.caseLibrary.findMany({
+    const rows = await this.prisma.caseLibrary.findMany({
       where: projectId ? { tenantId, projectId } : { tenantId },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+    return rows.map((row) => this.present(row));
   }
 }

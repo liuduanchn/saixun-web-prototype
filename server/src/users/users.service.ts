@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role, Tenant, User } from '@prisma/client';
+import { Tenant, User } from '@prisma/client';
+import { Role } from '../common/enums';
 
 export interface CreateUserData {
   tenantId: string;

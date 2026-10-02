@@ -11,19 +11,22 @@ import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.interface'
 import { JwtPayload } from '../auth/auth.service';
 import { LearningService } from '../learning/learning.service';
 import { extractJson } from '../common/llm.util';
+import { parseJson, toJson } from '../common/json';
 
-interface TranscriptEntry {
+// 以下三个接口需要导出：DefenseService 的 present() 出口会用到它们，
+// 否则 controller 的公开方法返回类型无法在 .d.ts 中具名（TS4053）。
+export interface TranscriptEntry {
   round: number;
   role: 'judge' | 'student';
   content: string;
   evaluation?: { logic: number; evidence: number; accuracy: number; comment: string };
 }
-interface RoundEval {
+export interface RoundEval {
   round: number;
   scores: { logic: number; evidence: number; accuracy: number };
   comment: string;
 }
-interface Evaluations {
+export interface Evaluations {
   maxRounds: number;
   rounds: RoundEval[];
   overall?: string;
@@ -74,6 +77,19 @@ export class DefenseService {
   }
 
   /** 发起模拟答辩：生成第 1 轮评委追问 */
+  /**
+   * 出口统一还原：transcript / evaluations 在库中以 JSON 文本存储（SQLite 不支持 Json 类型），
+   * 返回给上层/前端前必须还原为数组与对象，否则前端 `transcript.map()` 会抛 TypeError。
+   * 全部出口（create / answer / list / get / rename）都必须经过此方法。
+   */
+  private present<T extends { transcript: unknown; evaluations: unknown }>(session: T) {
+    return {
+      ...session,
+      transcript: parseJson<TranscriptEntry[]>(session.transcript, []),
+      evaluations: parseJson<Evaluations>(session.evaluations, { maxRounds: 3, rounds: [] }),
+    };
+  }
+
   async create(projectId: string, maxRounds: number, user: JwtPayload) {
     await this.assertProjectTenant(projectId, user.tenantId);
     const rounds = Math.max(1, Math.min(6, maxRounds || 3));
@@ -92,7 +108,12 @@ export class DefenseService {
     const evaluations: Evaluations = { maxRounds: rounds, rounds: [] };
 
     const session = await this.prisma.defenseSession.create({
-      data: { projectId, round: 1, transcript: transcript as any, evaluations: evaluations as any },
+      data: {
+        projectId,
+        round: 1,
+        transcript: toJson(transcript),
+        evaluations: toJson(evaluations),
+      },
     });
 
     // 事件驱动：为答辩发起者记录学习埋点
@@ -102,7 +123,7 @@ export class DefenseService {
       payload: { rounds },
     });
 
-    return session;
+    return this.present(session);
   }
 
   private async callAiFirstQuestion(pointList: string, workText: string): Promise<string> {
@@ -138,11 +159,11 @@ export class DefenseService {
     if (!answerText || !answerText.trim())
       throw new BadRequestException('作答内容不能为空');
 
-    const transcript = (session.transcript as unknown as TranscriptEntry[]) || [];
-    const evaluations = (session.evaluations as unknown as Evaluations) || {
+    const transcript = parseJson<TranscriptEntry[]>(session.transcript, []);
+    const evaluations = parseJson<Evaluations>(session.evaluations, {
       maxRounds: 3,
       rounds: [],
-    };
+    });
     if (evaluations.done) throw new BadRequestException('答辩已结束，可重新发起新会话');
 
     const lastJudge = [...transcript].reverse().find((t) => t.role === 'judge');
@@ -203,11 +224,11 @@ export class DefenseService {
       where: { id },
       data: {
         round: nextQuestion ? currentRound + 1 : currentRound,
-        transcript: transcript as any,
-        evaluations: evaluations as any,
+        transcript: toJson(transcript),
+        evaluations: toJson(evaluations),
       },
     });
-    return updated;
+    return this.present(updated);
   }
 
   private async callAiEvaluate(
@@ -262,10 +283,11 @@ export class DefenseService {
 
   async list(projectId: string, user: JwtPayload) {
     await this.assertProjectTenant(projectId, user.tenantId);
-    return this.prisma.defenseSession.findMany({
+    const rows = await this.prisma.defenseSession.findMany({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((row) => this.present(row));
   }
 
   async get(id: string, user: JwtPayload) {
@@ -274,7 +296,7 @@ export class DefenseService {
     const project = await this.prisma.project.findUnique({ where: { id: session.projectId } });
     if (project?.tenantId !== user.tenantId)
       throw new ForbiddenException('无权限访问该答辩');
-    return session;
+    return this.present(session);
   }
 
   /** 删除答辩记录：校验租户归属后物理删除 */
@@ -299,7 +321,7 @@ export class DefenseService {
       where: { id },
       data: { title: title ? title.trim().slice(0, 80) : null },
     });
-    return updated;
+    return this.present(updated);
   }
 
   // ---- 启发式兜底（无 AI 密钥时本地可用）----

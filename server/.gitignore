@@ -6,3 +6,13 @@ uploads
 .buildtmp
 .freshbuild
 .dbbackup
+
+# SQLite 运行期数据文件（workbuddyDeploy 分支）：
+# 库由构建/启动阶段用 prisma migrate deploy + seed 在目标环境生成，不入库。
+# -shm/-wal 是 WAL 模式的附加文件，同样不要提交。
+prisma/*.db
+prisma/*.db-shm
+prisma/*.db-wal
+
+# 本地/线上运行时密钥配置（三级优先级第 2 级），仓库只提交 runtime.example.json
+config/runtime.json

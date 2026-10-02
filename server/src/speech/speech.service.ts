@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, HttpException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { parseJson } from '../common/json';
 
 export interface AudioInput {
   buffer: Buffer;
@@ -84,7 +85,7 @@ export class SpeechService {
 
   async transcribe(tenantId: string, audio: AudioInput): Promise<{ transcript: string }> {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    const settings = ((tenant?.settings as Record<string, unknown>) || {}) as Record<string, string>;
+    const settings = parseJson<Record<string, string>>(tenant?.settings, {});
     const {
       asrApiKey,
       asrEndpoint,

@@ -5,10 +5,15 @@
 // 演示兜底：当未配置 VITE_API_BASE 时 DEMO_MODE=true，数据驱动的页面回退到内置示例数据，
 //          保证未连接后端的线上演示页仍可正常展示。
 
-const RAW_BASE = import.meta.env.VITE_API_BASE || "/api";
+// 注意：`import.meta.env` 是 Vite 专有对象，在纯 Node 环境（如 `node --test` 跑单测）
+// 下为 undefined，直接访问属性会抛 TypeError 导致整个模块无法导入。
+// 因此这里统一收敛到一个变量并做容错；Vite 构建时仍会正常注入该对象。
+const ENV = import.meta.env || {};
+
+const RAW_BASE = ENV.VITE_API_BASE || "/api";
 export const API_BASE = RAW_BASE.replace(/\/$/, "");
-export const DEMO_MODE = !import.meta.env.VITE_API_BASE;
-export const PROJECT_ID = import.meta.env.VITE_PROJECT_ID || "demo-project";
+export const DEMO_MODE = !ENV.VITE_API_BASE;
+export const PROJECT_ID = ENV.VITE_PROJECT_ID || "demo-project";
 
 const TOKEN_KEY = "saixun-token";
 const REFRESH_KEY = "saixun-refresh";

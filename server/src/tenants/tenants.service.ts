@@ -2,7 +2,26 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { UsersService } from '../users/users.service';
 import { AuthService, JwtPayload } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role, Prisma } from '@prisma/client';
+import { Role } from '../common/enums';
+import { parseJson, toJson } from '../common/json';
+
+/** 密钥脱敏：保留前 3 位便于识别是哪个 key，其余一律星号；空值返回空串。 */
+function maskSecretValue(value: unknown): string {
+  const s = typeof value === 'string' ? value : '';
+  if (!s) return '';
+  return s.length <= 4 ? '****' : `${s.slice(0, 3)}****`;
+}
+
+/**
+ * 下发 settings 前统一脱敏。
+ * 背景：ASR 密钥存在 Tenant.settings 里，但原实现会把**明文**随 /api/tenants/me
+ * 一起返回给浏览器（设置中心表单回显），与「密钥绝不暴露给前端」的约定相矛盾。
+ * 现在只回显脱敏形态，并附 asrApiKeySet 布尔标记供前端判断是否已配置。
+ */
+function presentSettings(settings: Record<string, unknown>) {
+  const raw = typeof settings.asrApiKey === 'string' ? settings.asrApiKey : '';
+  return { ...settings, asrApiKey: maskSecretValue(raw), asrApiKeySet: Boolean(raw) };
+}
 
 @Injectable()
 export class TenantsService {
@@ -46,7 +65,7 @@ export class TenantsService {
       createdAt: tenant.createdAt,
       memberCount,
       projectCount,
-      settings: tenant.settings,
+      settings: presentSettings(parseJson<Record<string, unknown>>(tenant.settings, {})),
     };
   }
 
@@ -62,16 +81,34 @@ export class TenantsService {
   /** 更新团队级配置（JSON 合并）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName */
   async updateSettings(settings: Record<string, unknown>, user: JwtPayload) {
     if (!settings || typeof settings !== 'object') throw new BadRequestException('配置格式不正确');
-    const current = (await this.prisma.tenant.findUnique({
-      where: { id: user.tenantId },
-    }))?.settings as Record<string, unknown> | null;
-    const merged = { ...(current || {}), ...settings };
+    const current = parseJson<Record<string, unknown>>(
+      (await this.prisma.tenant.findUnique({ where: { id: user.tenantId } }))?.settings,
+      {},
+    );
+    const merged = { ...current, ...settings };
+
+    // 密钥处理（重要）：前端回显的是脱敏值，因此
+    //   · 传回以 **** 结尾的脱敏值 → 视为「未修改」，保留库中原值，
+    //     避免「打开设置页直接保存」把真实密钥覆盖成 sk-****；
+    //   · 传空字符串 → 视为「显式清除」；
+    //   · 其他值 → 视为新密钥，正常写入。
+    const incomingKey = typeof merged.asrApiKey === 'string' ? merged.asrApiKey.trim() : undefined;
+    if (incomingKey === undefined || incomingKey.endsWith('****')) {
+      if (typeof current.asrApiKey === 'string') merged.asrApiKey = current.asrApiKey;
+      else delete merged.asrApiKey;
+    } else if (!incomingKey) {
+      delete merged.asrApiKey;
+    }
+
     const tenant = await this.prisma.tenant.update({
       where: { id: user.tenantId },
-      // merged 为运行时合并后的任意 JSON 对象，Prisma 的 InputJsonValue 类型校验较严，此处按 JSON 写入
-      data: { settings: merged as unknown as Prisma.InputJsonValue },
+      // settings 在库中以 JSON 文本存储（SQLite 不支持 Json 类型）
+      data: { settings: toJson(merged) },
     });
-    return { id: tenant.id, settings: tenant.settings };
+    return {
+      id: tenant.id,
+      settings: presentSettings(parseJson<Record<string, unknown>>(tenant.settings, {})),
+    };
   }
 
   /** 创建新团队：当前用户成为 OWNER 并自动切换为活跃团队 */
