@@ -91,7 +91,13 @@ async function request(path, options = {}, _isRetry = false) {
   const headers = {};
   if (auth) {
     const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+      // 备用通道：部署到托管平台后实测「Authorization 头经边缘代理后没能原样到达」，
+      // 导致带 token 的请求全部 401。后端 JWT 策略同时接受该自定义头与同名 Cookie
+      // （见 server/src/auth/jwt.strategy.ts），三路任一可用即可。
+      headers["X-Auth-Token"] = token;
+    }
   }
 
   let payload;

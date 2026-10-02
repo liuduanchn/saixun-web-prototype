@@ -41,12 +41,14 @@ if (!existsSync(dbPath)) {
   console.log('[workbuddy:start] 已存在 SQLite 库，跳过初始化');
 }
 
-// 平台只注入 PORT。演示站使用固定的演示账号，JWT 密钥缺失时会退化成代码里的
-// 默认串；这里显式给一个演示专用值，便于识别，也避免与生产默认值混淆。
-// 如需更安全：在部署时通过 startCmd 内联注入 JWT_SECRET 覆盖此值。
-if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = 'workbuddy-demo-only-secret-please-override';
-  console.warn('[workbuddy:start] 未提供 JWT_SECRET，使用演示专用默认值');
+// 平台只注入 PORT。这里**强制**覆盖 JWT_SECRET（而不是「仅在未设置时」）：
+// 某些托管环境会为实例注入随机密钥，实例被回收重建后旧令牌会整体失效，
+// 表现为「刚登录成功、紧接着带 token 的请求就 401」。
+// 需要更安全的值时用 WORKBUDDY_JWT_SECRET 显式指定。
+process.env.JWT_SECRET =
+  process.env.WORKBUDDY_JWT_SECRET || 'workbuddy-demo-only-secret-please-override';
+if (!process.env.WORKBUDDY_JWT_SECRET) {
+  console.warn('[workbuddy:start] 未提供 WORKBUDDY_JWT_SECRET，使用演示专用确定值');
 }
 
 // 关键：切到 server/ 后再加载后端，保证 uploads/ 落点与上面的 seed 一致
