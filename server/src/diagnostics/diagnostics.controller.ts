@@ -7,6 +7,10 @@ import { JwtStrategy } from '../auth/jwt.strategy';
 // jsonwebtoken 是 @nestjs/jwt 的传递依赖，直接借来做「用指定密钥验签」的交叉验证
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const jwtLib = require('jsonwebtoken') as { verify: (token: string, secret: string) => unknown };
+// passport 的策略注册表：AuthGuard('jwt') 依赖它，若注册表里没有 'jwt'
+// 就会抛「Unknown authentication strategy」并被 Nest 统一转成 401
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const passportLib = require('passport') as { _strategies?: Record<string, unknown> };
 
 function verifyWithSecret(token: string, secret: string) {
   return jwtLib.verify(token, secret);
@@ -59,6 +63,16 @@ export class DiagnosticsController {
       strategySecretFingerprint: this.jwtStrategy.secretFingerprint(),
       moduleRoundTrip,
       signedTokenPrefix,
+      // 关键探针：passport 全局注册表里是否已有 'jwt' 策略
+      registeredStrategies: Object.keys(passportLib._strategies ?? {}),
+      hasJwtStrategy: Boolean(passportLib._strategies?.jwt),
+      passportPath: (() => {
+        try {
+          return require.resolve('passport');
+        } catch {
+          return 'resolve-failed';
+        }
+      })(),
       node: process.version,
       cwd: process.cwd(),
     };
