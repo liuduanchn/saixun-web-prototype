@@ -18,7 +18,12 @@ import { TenantGuard } from './guards/tenant.guard';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') || 'change-me-in-production',
+        // 直接以 process.env 为准，与 JwtStrategy 的验签侧保持**同一个读取路径**。
+        // 排查线上 401 时发现：签发侧经 ConfigService 解析、验签侧另一条路径，
+        // 两者一旦取值不同，就会出现「登录成功但所有带 token 的请求 401」，
+        // 且自签自验能通过（两边各自的密钥都自洽），极难定位。
+        secret:
+          process.env.JWT_SECRET || config.get<string>('JWT_SECRET') || 'change-me-in-production',
         signOptions: {
           // access_token 短期有效（默认 12h），配合 /auth/refresh 续期；可经 JWT_EXPIRES_IN 覆盖
           expiresIn: (config.get<string>('JWT_EXPIRES_IN') || '12h') as any,

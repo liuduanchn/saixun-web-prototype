@@ -1,8 +1,16 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomUUID } from 'crypto';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtStrategy } from '../auth/jwt.strategy';
+
+// jsonwebtoken 是 @nestjs/jwt 的传递依赖，直接借来做「用指定密钥验签」的交叉验证
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const jwtLib = require('jsonwebtoken') as { verify: (token: string, secret: string) => unknown };
+
+function verifyWithSecret(token: string, secret: string) {
+  return jwtLib.verify(token, secret);
+}
 
 /**
  * 【临时诊断接口】workbuddyDeploy 分支排障用，定位完即删。
@@ -76,5 +84,30 @@ export class DiagnosticsController {
       forwardedProto: h['x-forwarded-proto'] ?? null,
       forwardedFor: h['x-forwarded-for'] ?? null,
     };
+  }
+
+  /**
+   * 交叉验签探针：把「同一个 token」分别用签发模块的密钥与进程环境变量的密钥验一遍。
+   * 自签自验（moduleRoundTrip）即使两侧密钥不同也会通过，只有交叉验证才能暴露差异。
+   */
+  @Public()
+  @Post('verify')
+  async verify(@Body() body: { token?: string }) {
+    const token = String(body?.token ?? '');
+    const secret = process.env.JWT_SECRET ?? '';
+    const out: Record<string, string> = {};
+    try {
+      await this.jwt.verifyAsync(token);
+      out.moduleVerify = 'ok';
+    } catch (e) {
+      out.moduleVerify = (e as Error).message;
+    }
+    try {
+      verifyWithSecret(token, secret);
+      out.envVerify = 'ok';
+    } catch (e) {
+      out.envVerify = (e as Error).message;
+    }
+    return out;
   }
 }
