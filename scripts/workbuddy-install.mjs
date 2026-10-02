@@ -17,6 +17,8 @@
  *      （两者都用 process.cwd() 推导）。
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,6 +29,36 @@ const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 // 而不经过 shell 会直接抛 EINVAL（CVE-2024-27980 的修复引入的行为）。
 // 这里传给 npm 的都是固定短参数（无空格、无用户输入），走 shell 无注入风险。
 const SPAWN_OPTS = { shell: true };
+
+/**
+ * 依赖安装缓存戳。
+ * 平台会**复用已记录的沙箱**，所以第二次发布会面对一个已经装好 node_modules 的目录。
+ * 实测在这种状态下重跑整套 `npm ci` 会失败（首次部署则成功），因此：
+ *   · 锁文件与 package.json 未变、且两处 node_modules 都在 → 跳过安装；
+ *   · 否则照常安装，并在成功后写入戳。
+ * 这既规避了上面的失败，也让后续重新发布快很多。
+ */
+const STAMP = path.join(root, '.workbuddy-install-stamp');
+function depsFingerprint() {
+  const files = [
+    'package.json',
+    'package-lock.json',
+    'server/package.json',
+    'server/package-lock.json',
+  ];
+  const h = createHash('sha256');
+  for (const f of files) {
+    const p = path.join(root, f);
+    h.update(f);
+    h.update(existsSync(p) ? readFileSync(p) : '');
+  }
+  return h.digest('hex');
+}
+function depsReady() {
+  if (!existsSync(path.join(root, 'node_modules', '.package-lock.json'))) return false;
+  if (!existsSync(path.join(serverDir, 'node_modules', '.package-lock.json'))) return false;
+  return existsSync(STAMP) && readFileSync(STAMP, 'utf8').trim() === depsFingerprint();
+}
 
 function run(cwd, args, label) {
   console.log(`\n[workbuddy:install] ▸ ${label}\n[workbuddy:install]   cwd=${cwd}\n[workbuddy:install]   npm ${args.join(' ')}`);
@@ -49,9 +81,21 @@ function runSoft(cwd, args, label) {
   return !r.error && r.status === 0;
 }
 
+/** 安装依赖：已就绪则跳过；npm ci 失败时退回 npm install（可断点续装） */
+function installDeps(cwd, label) {
+  if (depsReady()) {
+    console.log(`\n[workbuddy:install] ▸ ${label}\n[workbuddy:install]   依赖已就绪且锁文件未变 → 跳过安装（复用沙箱）`);
+    return;
+  }
+  if (runSoft(cwd, ['ci', '--include=dev'], label)) return;
+  console.warn('[workbuddy:install]   npm ci 失败，退回 npm install --include=dev');
+  run(cwd, ['install', '--include=dev'], `${label}（npm install 回退）`);
+}
+
 console.log('[workbuddy:install] Node ' + process.version);
-run(root, ['ci', '--include=dev'], '安装前端依赖');
-run(serverDir, ['ci', '--include=dev'], '安装后端依赖（含 devDependencies，构建必需）');
+installDeps(root, '安装前端依赖');
+installDeps(serverDir, '安装后端依赖（含 devDependencies，构建必需）');
+writeFileSync(STAMP, depsFingerprint());
 run(serverDir, ['run', 'prisma:generate'], '生成 Prisma Client');
 run(serverDir, ['run', 'prisma:deploy'], '应用 SQLite 迁移');
 

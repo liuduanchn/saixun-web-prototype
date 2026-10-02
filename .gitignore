@@ -21,3 +21,5 @@ dist-check/
 server/config/runtime.json
 # 发布到 WorkBuddy 用的上传目录由 scripts/prepare-workbuddy-deploy.mjs 生成
 workbuddy-deploy/
+# 依赖安装缓存戳（由 scripts/workbuddy-install.mjs 在沙箱内写入）
+.workbuddy-install-stamp
