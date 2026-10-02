@@ -8,8 +8,16 @@ import { JwtPayload } from './auth.service';
 /** 认证 Cookie 名（与 access_token 同值，httpOnly） */
 export const AUTH_COOKIE = 'saixun_token';
 
-/** 备用自定义请求头名：值直接是 token 原文（不带 Bearer 前缀） */
-export const AUTH_HEADER = 'x-auth-token';
+/**
+ * 本应用专用的认证请求头（值直接是 token 原文，不带 Bearer 前缀）。
+ *
+ * 为什么不用标准 Authorization —— 部署到 WorkBuddy 托管平台后实测：
+ * 平台网关会**在每一个请求上注入它自己的** `Authorization: Bearer eyJ...`
+ * （同时还有 x-space-key 等），导致 passport 从标准头取到的是**网关的令牌**，
+ * 验签必然 `invalid signature`，表现为「登录成功但所有带 token 的请求 401」。
+ * 用一个网关不会触碰的专属头名即可绕开该冲突。
+ */
+export const AUTH_HEADER = 'x-saixun-auth';
 
 /**
  * 从 Cookie 中取 token。手写解析而不引入 cookie-parser ——
@@ -38,14 +46,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // 避免两侧分别经 ConfigService 解析时出现不一致（曾据此排查线上 401）。
     const secret = process.env.JWT_SECRET || config.get<string>('JWT_SECRET') || 'change-me-in-production';
     super({
-      // 三路任取其一：标准 Bearer 头 → 自定义头 → Cookie。
-      // 背景：部署到 WorkBuddy 托管平台后实测「登录成功但带 token 的请求全部 401」，
-      // 而同一份代码用同一个启动脚本在本地完全正常，且 refresh（走请求体、不经本策略）
-      // 也正常 —— 说明令牌本身有效。因此并行支持多条通道，任一可用即可，本地行为不变。
+      // 提取顺序**很重要**：专属头 → Cookie → 标准 Bearer。
+      // 标准 Bearer 放最后，因为托管平台的网关会注入自己的 Authorization，
+      // 若放在前面就会永远取到网关的令牌（详见 AUTH_HEADER 的说明）。
       jwtFromRequest: ExtractJwt.fromExtractors([
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
         ExtractJwt.fromHeader(AUTH_HEADER),
         fromCookie,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
       ]),
       ignoreExpiration: false,
       secretOrKey: secret,

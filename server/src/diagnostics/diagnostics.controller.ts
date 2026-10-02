@@ -87,10 +87,22 @@ export class DiagnosticsController {
       .split(';')
       .map((s: string) => s.split('=')[0].trim())
       .filter(Boolean);
+    // 解开 Authorization 里的 JWT payload（不验签），用于判断这个令牌到底是谁的：
+    // 托管平台网关会注入它自己的 Authorization，其 sub 与本应用的完全不同。
+    const authRaw = String(h.authorization ?? '').replace(/^Bearer\s+/i, '');
+    let authorizationSub = '';
+    try {
+      const p = authRaw.split('.')[1];
+      if (p) authorizationSub = String(JSON.parse(Buffer.from(p, 'base64url').toString()).sub ?? '');
+    } catch {
+      authorizationSub = 'decode-failed';
+    }
     return {
       allHeaderNames: Object.keys(h).sort(),
       hasAuthorization: Boolean(h.authorization),
       authorizationPrefix: String(h.authorization ?? '').slice(0, 14),
+      authorizationSub,
+      hasSaixunAuth: Boolean(h['x-saixun-auth']),
       hasXAuthToken: Boolean(h['x-auth-token']),
       hasCookie: Boolean(h.cookie),
       cookieNames,

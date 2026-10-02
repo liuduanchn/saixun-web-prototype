@@ -92,11 +92,11 @@ async function request(path, options = {}, _isRetry = false) {
   if (auth) {
     const token = getToken();
     if (token) {
+      // 首选专属头：部署到托管平台后实测「网关会在每个请求上注入它自己的
+      // Authorization」，导致后端从标准头取到网关令牌、一律验签失败（登录成功但
+      // 所有接口 401）。后端优先读本头，Authorization 仅为兼容标准客户端保留。
+      headers["X-Saixun-Auth"] = token;
       headers.Authorization = `Bearer ${token}`;
-      // 备用通道：部署到托管平台后实测「Authorization 头经边缘代理后没能原样到达」，
-      // 导致带 token 的请求全部 401。后端 JWT 策略同时接受该自定义头与同名 Cookie
-      // （见 server/src/auth/jwt.strategy.ts），三路任一可用即可。
-      headers["X-Auth-Token"] = token;
     }
   }
 
