@@ -35,6 +35,7 @@ import { TenantGuard } from './guards/tenant.guard';
     // 全局租户守卫：校验请求具备租户上下文，集中式多租户隔离兜底
     { provide: APP_GUARD, useClass: TenantGuard },
   ],
-  exports: [AuthService, JwtModule],
+  // JwtStrategy 一并导出：临时诊断接口需要读取「验签侧实际使用的密钥指纹」
+  exports: [AuthService, JwtModule, JwtStrategy],
 })
 export class AuthModule {}

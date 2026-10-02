@@ -1,20 +1,19 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Req } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { createHash, randomUUID } from 'crypto';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtStrategy } from '../auth/jwt.strategy';
 
 /**
  * 【临时诊断接口】workbuddyDeploy 分支排障用，定位完即删。
  *
- * 背景：部署到托管平台后出现「登录成功但带 token 的请求全部 401」，
- * 且 Authorization / X-Auth-Token / Cookie 三条通道同时失败 ——
- * 这排除了「请求头被边缘代理改写」的解释，更像是签发与校验所用的
- * JWT_SECRET 不是同一个值。若平台同时跑着多个实例，而各实例密钥不同，
- * 就会正好呈现这个现象。
- *
- * 判定方式：连续调用本接口多次，比较 instanceId 与 jwtSecretHash ——
- *   · instanceId 变化            → 存在多个实例（负载均衡）
- *   · instanceId 不变但 hash 变  → 同一实例密钥被改写（几乎不可能）
- *   · 都不变且 /api/auth/me 仍 401 → 同一进程内签发与校验不一致
+ * 待查问题：部署到托管平台后「登录成功但带 token 的请求全部 401」，
+ * 且 Authorization / X-Auth-Token / Cookie 三条通道同时失败。
+ * 已排除：多实例（连续调用同一 instanceId/pid）、边缘缓存（响应恒为 MISS）、
+ *        令牌本身无效（refresh 走请求体正常、JWT payload 正确且未过期）。
+ * 本接口用来一次性确定剩下两种可能：
+ *   · /headers  → 应用到底收到了哪些请求头（凭证是否被链路剥掉）
+ *   · /auth     → 验签密钥指纹是否与签发侧一致
  */
 @Controller('diagnostics')
 export class DiagnosticsController {
@@ -22,19 +21,60 @@ export class DiagnosticsController {
   private readonly instanceId = randomUUID();
   private readonly bootAt = new Date().toISOString();
 
+  constructor(
+    private readonly jwtStrategy: JwtStrategy,
+    private readonly jwt: JwtService,
+  ) {}
+
   @Public()
   @Get('auth')
-  auth() {
+  async auth() {
     const secret = process.env.JWT_SECRET ?? '';
+    // 功能自检：用签发侧（JwtModule）签一个 token，再用它的密钥验回来，
+    // 确认签发侧自身一致（若这步都失败，问题在签发侧的配置）。
+    let moduleRoundTrip = 'ok';
+    let signedTokenPrefix = '';
+    try {
+      const t = await this.jwt.signAsync({ sub: 'diag', tenantId: 'demo-tenant' });
+      signedTokenPrefix = t.slice(0, 12);
+      await this.jwt.verifyAsync(t);
+    } catch (e) {
+      moduleRoundTrip = (e as Error).message;
+    }
     return {
       instanceId: this.instanceId,
       pid: process.pid,
       bootAt: this.bootAt,
-      // 仅为对比「两个实例是否用了不同的密钥」，取前 10 位足够，且不是密钥本身
-      jwtSecretHash: createHash('sha256').update(secret).digest('hex').slice(0, 10),
       hasSecret: secret.length > 0,
+      // 签发侧（process.env）与验签侧（策略实际持有）的指纹，两者必须相同
+      envSecretFingerprint: createHash('sha256').update(secret).digest('hex').slice(0, 10),
+      strategySecretFingerprint: this.jwtStrategy.secretFingerprint(),
+      moduleRoundTrip,
+      signedTokenPrefix,
       node: process.version,
       cwd: process.cwd(),
+    };
+  }
+
+  /** 回显应用实际收到的请求头 —— 用于判断凭证是否在链路上被剥离 */
+  @Public()
+  @Get('headers')
+  headers(@Req() req: any) {
+    const h = req?.headers ?? {};
+    const cookieNames = String(h.cookie ?? '')
+      .split(';')
+      .map((s: string) => s.split('=')[0].trim())
+      .filter(Boolean);
+    return {
+      allHeaderNames: Object.keys(h).sort(),
+      hasAuthorization: Boolean(h.authorization),
+      authorizationPrefix: String(h.authorization ?? '').slice(0, 14),
+      hasXAuthToken: Boolean(h['x-auth-token']),
+      hasCookie: Boolean(h.cookie),
+      cookieNames,
+      host: h.host ?? null,
+      forwardedProto: h['x-forwarded-proto'] ?? null,
+      forwardedFor: h['x-forwarded-for'] ?? null,
     };
   }
 }
