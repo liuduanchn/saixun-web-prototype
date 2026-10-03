@@ -14,12 +14,24 @@ import { WorkspacePage } from "./pages.jsx";
 import { getSidebarPresentation } from "./sidebarState.js";
 import { api, DEMO_MODE, PROJECT_ID, setTokens } from "./api.js";
 import { normalizeTask } from "./taskModel.js";
+import { ProgressRing } from "./ProgressRing.jsx";
+import { formatDateTime, formatToday, stageIndex, stageLabel, unwrapList } from "./shape.js";
 
-const stages = [
-  { id: 1, label: "赛项理解", state: "done" }, { id: 2, label: "方案设计", state: "done" },
-  { id: 3, label: "原型开发", state: "done" }, { id: 4, label: "作品打磨", state: "active" },
-  { id: 5, label: "模拟答辩", state: "next" }, { id: 6, label: "赛后复盘", state: "next" },
-];
+/**
+ * 六阶段备赛轨道。
+ * 此前 state 全部写死（前三 done、第四 active），导致所有项目都显示
+ * “作品打磨进行中”，与后端 Project.currentStage 的真实阶段脱节。
+ * 现在 state 由 activeIndex 相对推导，索引来自真实数据。
+ */
+const STAGE_LABELS = ["赛项理解", "方案设计", "原型开发", "作品打磨", "模拟答辩", "赛后复盘"];
+
+function buildStages(activeIndex) {
+  const current = Math.min(Math.max(activeIndex, 1), STAGE_LABELS.length);
+  return STAGE_LABELS.map((label, i) => {
+    const id = i + 1;
+    return { id, label, state: id < current ? "done" : id === current ? "active" : "next" };
+  });
+}
 
 const navItems = [
   { label: "竞赛项目驾驶舱", icon: House }, { label: "赛项解析中心", icon: Cube },
@@ -65,10 +77,7 @@ const NOTIF_ICONS = {
 };
 
 function formatNotifTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatDateTime(iso);
 }
 
 export function App() {
@@ -78,36 +87,59 @@ export function App() {
   const [activeNav, setActiveNav] = useState(user?.role === "STUDENT" ? "我的任务" : "竞赛项目驾驶舱");
   const [tasks, setTasks] = useState(DEMO_MODE ? initialTasks : []);
   const [coverage, setCoverage] = useState(null);
+  const [coverageError, setCoverageError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // 顶栏日期取系统当日。此前是硬编码字符串 "2026-08-24星期一"，
+  // 演示时与真实日期不符；这里按本地时区计算，并在跨零点时自动刷新。
+  const [todayText, setTodayText] = useState(() => formatToday());
   const [notifications, setNotifications] = useState(initialNotifications);
   const [toast, setToast] = useState("");
   const [created, setCreated] = useState(false);
+  // 默认赛项：演示模式用构建期注入的固定 ID；连后端时**留空**，
+  // 由下面的projects effect 按当前租户实际可见的项目决定。
+  //此前直接用 VITE_PROJECT_ID（demo-project）作为初值，而登录账号的活跃
+  // 租户往往不是 demo-tenant，导致首个请求就403、任务与覆盖率长期空白。
   const [projects, setProjects] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState(PROJECT_ID);
+  const [selectedProjectId, setSelectedProjectId] = useState(DEMO_MODE ? PROJECT_ID : "");
   const [teams, setTeams] = useState([]);
   const [activeTenantId, setActiveTenantId] = useState(user?.tenantId || "");
   const taskSummary = useMemo(() => `${tasks.filter((task) => task.done).length}/${tasks.length}`, [tasks]);
   const unreadNotificationCount = useMemo(() => getUnreadNotificationCount(notifications), [notifications]);
   const sidebarPresentation = getSidebarPresentation(sidebarCollapsed);
   const activeTeamName = teams.find((t) => t.tenantId === activeTenantId)?.name || user?.name || "智造先锋队";
+  // 当前赛项的真实阶段：后端 Project.currentStage（POLISH/REVIEW/DESIGN…），
+  // 此前界面固定显示「作品打磨」，与实际进度脱节。
+  const activeProject = projects.find((p) => p.id === selectedProjectId) || null;
+  const currentStage = activeProject?.currentStage || "";
+  const currentStageLabel = stageLabel(currentStage);
+  const stages = useMemo(() => buildStages(stageIndex(currentStage)), [currentStage]);
 
-  // 登录后拉取可切换的赛项列表（演示模式不请求）；切换团队后若当前项目不在列表则自动选首个
+  // 评分覆盖率：优先用后端真实值；未加载或失败时回落到 0并由界面显式提示，
+  // 不再拿写死的 18/25、72% 冒充真实数据。
+  const covCovered = coverage?.coveredScorePoints ?? 0;
+  const covTotal = coverage?.totalScorePoints ?? 0;
+  const overallRate = coverage?.coverageRate ?? 0;
+  const covRemaining = Math.max(0, covTotal - covCovered);
+
+  // 拉取当前租户下可切换的赛项列表；切换团队后若当前项目不在列表则自动选首个。
+  // 依赖 activeTenantId —— 此前只依赖 [user]，切换团队后项目列表不重新拉取，
+  // 页面仍停留在上一个租户的数据上。
   useEffect(() => {
-    if (DEMO_MODE || !user) return undefined;
+    if (DEMO_MODE || !user || !activeTenantId) return undefined;
     let active = true;
     api.projects.list().then((list) => {
       if (!active) return;
-      const arr = Array.isArray(list) ? list : [];
+      const arr = unwrapList(list);
       setProjects(arr);
       setSelectedProjectId((current) => (arr.some((p) => p.id === current) ? current : (arr[0]?.id || "")));
     }).catch(() => {});
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, activeTenantId]);
 
   // 登录后拉取可切换的团队列表（演示模式不请求）
   useEffect(() => {
@@ -115,9 +147,12 @@ export function App() {
     let active = true;
     api.tenants.mine().then((list) => {
       if (!active) return;
-      const arr = Array.isArray(list) ? list : [];
-      setTeams(arr);
-      setActiveTenantId(user.tenantId);
+      setTeams(unwrapList(list));
+      // 关键：取后端返回的 isActive 标记作为权威活跃租户，
+      // 不用会话里的 user.tenantId —— 切换团队后该字段仍是旧租户，
+      // 会导致 projects 列表按旧租户拉取。
+      const current = unwrapList(list).find((t) => t.isActive);
+      setActiveTenantId(current?.tenantId || user.tenantId);
     }).catch(() => {});
     return () => {
       active = false;
@@ -125,20 +160,35 @@ export function App() {
   }, [user]);
 
   // 登录后拉取真实通知（演示模式保留内置示例）
+  // 注意：/notifications 走分页，返回 { items, total, ... }，
+  // 必须解包后再 setState，否则通知面板会一直停留在内置示例数据。
   useEffect(() => {
     if (DEMO_MODE || !user) return undefined;
     let active = true;
-    api.notifications.list().then((list) => {
-      if (active && Array.isArray(list)) setNotifications(list);
+    api.notifications.list().then((payload) => {
+      if (active) setNotifications(unwrapList(payload));
     }).catch(() => {});
     return () => {
       active = false;
     };
   }, [user]);
 
+  // 顶栏日期跨零点自动刷新：每分钟比对一次日期字符串，变了就更新。
+  // 挂起页面（后台标签）时浏览器会节流定时器，回到前台时 onFocus 兜底校正。
+  useEffect(() => {
+    const sync = () => setTodayText((prev) => (prev === formatToday() ? prev : formatToday()));
+    const timer = window.setInterval(sync, 60_000);
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+
   useEffect(() => {
     if (!profileOpen) return undefined;
-
     const closeOnOutsideClick = (event) => {
       if (!profileAreaRef.current?.contains(event.target)) setProfileOpen(false);
     };
@@ -159,20 +209,34 @@ export function App() {
   }, [notificationOpen]);
 
   // 登录后拉取真实任务与评分覆盖率（演示模式保留内置示例数据），随赛项切换刷新
+  //
+  // 两个关键点：
+  // 1) /tasks 走分页返回 { items, total, ... }，必须解包后��能 map，
+  //    否则抛 “taskList.map is not a function”（此前登录后弹出的就是这个报错）。
+  // 2) tasks 与 coverage 分开兜底：任一失败不再连带清空另一个，
+  //    避免单接口异常导致整块区域空白。
   useEffect(() => {
-    if (DEMO_MODE || !user) return undefined;
+    if (DEMO_MODE || !user || !selectedProjectId) return undefined;
     let active = true;
+    setCoverageError("");
     (async () => {
-      try {
-        const [taskList, cov] = await Promise.all([
-          api.tasks.list(selectedProjectId),
-          api.tasks.coverage(selectedProjectId),
-        ]);
-        if (!active) return;
-        setTasks(taskList.map(normalizeTask));
-        setCoverage(cov);
-      } catch (err) {
-        if (active) showToast(err?.message || "任务数据加载失败");
+      const [taskResult, covResult] = await Promise.allSettled([
+        api.tasks.list(selectedProjectId),
+        api.tasks.coverage(selectedProjectId),
+      ]);
+      if (!active) return;
+      if (taskResult.status === "fulfilled") {
+        setTasks(unwrapList(taskResult.value).map(normalizeTask));
+      } else {
+        setTasks([]);
+        showToast(taskResult.reason?.message || "任务数据加载失败");
+      }
+      if (covResult.status === "fulfilled") {
+        setCoverage(covResult.value);
+        setCoverageError("");
+      } else {
+        setCoverage(null);
+        setCoverageError(covResult.reason?.message || "评分覆盖率加载失败");
       }
     })();
     return () => {
@@ -274,9 +338,7 @@ export function App() {
   const refreshTeams = () => {
     if (DEMO_MODE || !user) return;
     api.tenants.mine().then((list) => {
-      const arr = Array.isArray(list) ? list : [];
-      setTeams(arr);
-      setActiveTenantId(user.tenantId);
+      setTeams(unwrapList(list));
     }).catch(() => {});
   };
 
@@ -343,12 +405,12 @@ export function App() {
                 })}</div>
               </section>}
             </div>
-            <span className="today">2026-08-24&nbsp;&nbsp;星期一</span>
+            <span className="today">{todayText}</span>
           </div>
         </header>
 
         {activeNav === "竞赛项目驾驶舱" ? <section className="workspace">
-          <div className="project-meta"><span><UsersThree size={21} />团队：<strong>{activeTeamName}</strong></span><i /><span><Cube size={21} />当前阶段：<strong>作品打磨</strong></span></div>
+          <div className="project-meta"><span><UsersThree size={21} />团队：<strong>{activeTeamName}</strong></span><i /><span><Cube size={21} />当前阶段：<strong>{currentStageLabel}</strong></span></div>
           <section className="stage-track" aria-label="备赛阶段">
             {stages.map((stage) => <button key={stage.id} className={`stage ${stage.state}`} onClick={() => showToast(`已查看：${stage.label}`)}>
               <span className="stage-number">{stage.id}</span><strong>{stage.label}</strong>
@@ -362,25 +424,35 @@ export function App() {
                 <div className="recommendation-icon"><WarningCircle size={70} weight="duotone" /></div>
                 <div className="recommendation-copy">
                   <span className="eyebrow">智能推荐</span><h1>优先补齐应用成效证据</h1>
-                  <p>“应用成效”得分覆盖率仅 40%，是当前最高风险项。补齐测试样本、统计口径和前后对比，可显著提升评分可信度。</p>
+                  <p>整体评分点覆盖率仅 <strong>{overallRate}%</strong>，其中“应用成效”维度证据最薄弱。补齐测试样本、统计口径和前后对比，可显著提升评分可信度。</p>
                   <button className="criterion-chip" onClick={() => setDrawerOpen(true)}>关联评分点&nbsp;&nbsp;应用成效（20%）<CaretRight size={15} /></button>
                 </div>
-                <div className="score-visual" aria-label="应用成效得分覆盖率 40%"><img src="/assets/progress-orange.png" alt="" /><strong>40%</strong><span>得分覆盖率</span></div>
+                {/* 进度环此前是950KB 的不透明 PNG 位图：绝对路径不带 Vite base
+                    会 404，且环内深蓝底与面板底色几乎同色，数字看着“和背景一个颜色”。
+                    现改为内联 SVG，进度由真实覆盖率驱动。 */}
+                <div className="score-visual">
+                  <ProgressRing value={overallRate} max={100} accent="var(--orange)" size={126}>
+                    <strong>{overallRate}%</strong>
+                  </ProgressRing>
+                  <span>得分覆盖率</span>
+                </div>
                 <button className="primary-action" onClick={createRevisionTask}><FileText size={24} weight="bold" />{created ? "查看修改任务" : "生成修改任务"}</button>
               </section>
 
               <div className="lower-grid">
                 <section className="task-panel" id="tasks">
                   <div className="section-heading"><div><h2>本周任务</h2><span>{taskSummary} 已完成</span></div><button onClick={() => handleNav("训练任务中心")}>查看全部<CaretRight size={15} /></button></div>
+                  {tasks.length === 0 ? <p className="empty-state">{selectedProjectId ? "当前赛项暂无训练任务，可前往训练任务中心新建。" : "请先在顶部选择赛项。"}</p> : (
                   <div className="task-list">{tasks.slice(0, 5).map((task) => <div className={`task-row ${task.done ? "done" : ""} ${task.fresh ? "fresh" : ""}`} key={task.id}>
                     <button className="check-button" aria-label={`${task.done ? "取消完成" : "标记完成"}${task.title}`} onClick={() => toggleTask(task.id)}>{task.done ? <CheckCircle size={19} weight="fill" /> : <span />}</button>
                     <strong>{task.title}</strong><span className={`priority ${task.priority === "高优先级" ? "high" : task.priority === "已完成" ? "complete" : "medium"}`}>{task.priority}</span>
                     <span className="owner"><UserCircle size={15} />{task.owner}</span><span className="due"><Clock size={15} />{task.due}</span>
                   </div>)}</div>
+                  )}
                 </section>
                 <section className="risk-panel">
                   <div className="risk-heading"><div><ShieldWarning size={25} weight="fill" /><h2>风险预警</h2></div><span>最高风险</span></div>
-                  <h3>应用成效（20%）<strong>覆盖率 40%</strong></h3><p>关键证据不足：缺少测试样本、统计口径说明以及优化前后效果对比，可能影响 80% 以上得分。</p>
+                  <h3>应用成效（20%）<strong>覆盖率 {overallRate}%</strong></h3><p>关键证据不足：缺少测试样本、统计口径说明以及优化前后效果对比，可能影响 80% 以上得分。</p>
                   <button className="risk-action" onClick={() => setDrawerOpen(true)}><MagnifyingGlass size={18} />诊断证据缺口<CaretRight size={17} /></button>
                 </section>
               </div>
@@ -389,9 +461,14 @@ export function App() {
             <aside className="context-rail">
               <section className="coverage-panel">
                 <div className="section-heading"><h2>评分覆盖与进度</h2></div>
-                <div className="coverage-visual"><img src="/assets/progress-green.png" alt="" /><strong>{coverage ? coverage.coveredScorePoints : 18}<span>/{coverage ? coverage.totalScorePoints : 25}</span></strong></div>
-                <p>评分点覆盖率 <strong>{coverage ? coverage.coverageRate : 72}%</strong></p>
-                <div className="legend"><span><i className="covered" />已覆盖评分点</span><strong>{coverage ? coverage.coveredScorePoints : 18}</strong></div><div className="legend"><span><i />未覆盖评分点</span><strong>{coverage ? Math.max(0, coverage.totalScorePoints - coverage.coveredScorePoints) : 7}</strong></div>
+                <div className="coverage-visual">
+                  <ProgressRing value={overallRate} max={100} accent="var(--green)" size={122}>
+                    <strong>{covCovered}<span className="ring-total">/{covTotal}</span></strong>
+                  </ProgressRing>
+                </div>
+                <p>评分点覆盖率 <strong>{overallRate}%</strong></p>
+                <div className="legend"><span><i className="covered" />已覆盖评分点</span><strong>{covCovered}</strong></div><div className="legend"><span><i />未覆盖评分点</span><strong>{covRemaining}</strong></div>
+                {coverageError && <p className="coverage-error">{coverageError}</p>}
                 <button className="secondary-button" onClick={() => setDrawerOpen(true)}>查看详情</button>
               </section>
               <section className="review-panel" id="pending-review">
@@ -408,13 +485,13 @@ export function App() {
               </section>
             </aside>
           </div>
-        </section> : <WorkspacePage pageKey={resolvePage(activeNav)} projectId={selectedProjectId} user={user} activeTenantId={activeTenantId} onNavigate={handleNav} onToast={showToast} onOpenDiagnosis={() => setDrawerOpen(true)} onTeamUpdate={refreshTeams} onSwitchTenant={switchTenant} />}
+        </section> : <WorkspacePage pageKey={resolvePage(activeNav)} projectId={selectedProjectId} currentStage={currentStage} user={user} activeTenantId={activeTenantId} onNavigate={handleNav} onToast={showToast} onOpenDiagnosis={() => setDrawerOpen(true)} onTeamUpdate={refreshTeams} onSwitchTenant={switchTenant} />}
       </main>
 
       {drawerOpen && <div className="drawer-backdrop" onMouseDown={() => setDrawerOpen(false)}>
         <aside className="evidence-drawer" onMouseDown={(event) => event.stopPropagation()} aria-label="应用成效证据诊断">
           <div className="drawer-heading"><div><span>应用成效 · 20%</span><h2>证据缺口诊断</h2></div><AppIconButton label="关闭诊断" onClick={() => setDrawerOpen(false)}><X size={22} /></AppIconButton></div>
-          <div className="drawer-score"><ChartDonut size={66} weight="duotone" /><div><strong>40%</strong><span>当前证据完整度</span></div></div>
+          <div className="drawer-score"><ChartDonut size={66} weight="duotone" /><div><strong>{overallRate}%</strong><span>当前证据完整度</span></div></div>
           <p className="drawer-intro">当前材料尚不足以形成可核验的应用成效证据链，建议按以下顺序补齐。</p>
           <div className="evidence-list">{detailRows.map((row, index) => <div key={row.label}><span className="evidence-index">{index + 1}</span><div><strong>{row.label}</strong><p>{row.detail}</p></div><span className="evidence-status">{row.status}</span></div>)}</div>
           <button className="primary-action drawer-action" onClick={() => { createRevisionTask(); setDrawerOpen(false); }}><PaperPlaneTilt size={22} weight="fill" />生成补证任务</button>

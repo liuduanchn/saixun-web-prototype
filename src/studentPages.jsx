@@ -7,6 +7,7 @@ import { api, DEMO_MODE, PROJECT_ID } from "./api.js";
 const DEMO_PROJECT_NAME = "AI应用开发赛";
 const DEMO_STUDENT = "王同学";
 import { recordingToWav } from "./audio.js";
+import { unwrapList } from "./shape.js";
 
 const severityTone = (s) => ({ LOW: "green", MEDIUM: "blue", HIGH: "orange", CRITICAL: "red" }[s] || "blue");
 const severityLabel = (s) => ({ LOW: "低", MEDIUM: "中", HIGH: "高", CRITICAL: "严重" }[s] || s);
@@ -50,7 +51,7 @@ export function StudentTasksPage({ projectId, onToast }) {
     if (DEMO_MODE || !projectId) return undefined;
     let active = true;
     setLoading(true);
-    api.tasks.list(projectId).then((list) => { if (active) setTasks(Array.isArray(list) ? list : []); })
+    api.tasks.list(projectId).then((list) => { if (active) setTasks(unwrapList(list)); })
       .catch((err) => { if (active) onToast(err?.message || "任务加载失败"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -95,7 +96,7 @@ export function StudentWorksPage({ projectId, onToast, onNavigate }) {
     if (DEMO_MODE) return undefined;
     let active = true;
     setLoading(true);
-    api.works.mine().then((list) => { if (active) setWorks(Array.isArray(list) ? list : []); })
+    api.works.mine().then((list) => { if (active) setWorks(unwrapList(list)); })
       .catch((err) => { if (active) onToast(err?.message || "作品加载失败"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -165,7 +166,7 @@ export function StudentDiagnosisPage({ onToast }) {
     if (DEMO_MODE) return undefined;
     let active = true;
     setLoading(true);
-    api.diagnosis.mine().then((list) => { if (active) setRows(Array.isArray(list) ? list : []); })
+    api.diagnosis.mine().then((list) => { if (active) setRows(unwrapList(list)); })
       .catch((err) => { if (active) onToast(err?.message || "诊断加载失败"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -227,7 +228,7 @@ export function StudentDefensePage({ projectId, onToast }) {
 
   const loadList = () => {
     if (DEMO_MODE || !projectId) return;
-    api.defense.list(projectId).then((list) => setSessions(Array.isArray(list) ? list : [])).catch(() => {});
+    api.defense.list(projectId).then((list) => setSessions(unwrapList(list))).catch(() => {});
   };
   useEffect(loadList, [projectId]);
 

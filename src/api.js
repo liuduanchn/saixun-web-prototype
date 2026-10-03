@@ -228,8 +228,13 @@ export const api = {
     },
   },
   tasks: {
-    list(projectId) {
-      return request(`/tasks?projectId=${encodeURIComponent(projectId)}`);
+    /**
+     * 任务列表。后端走分页且默认 pageSize=20，看板场景下会静默截断
+     * （后端MAX_PAGE_SIZE=100），故显式请求 100 条把该项目的任务一次取全。
+     * 驾驶舱只展示前 5 条，无需分页控件。
+     */
+    list(projectId, pageSize = 100) {
+      return request(`/tasks?projectId=${encodeURIComponent(projectId)}&pageSize=${pageSize}`);
     },
     coverage(projectId) {
       return request(`/tasks/coverage?projectId=${encodeURIComponent(projectId)}`);
@@ -245,11 +250,15 @@ export const api = {
     },
   },
   works: {
-    list(projectId) {
-      return request(`/works?projectId=${encodeURIComponent(projectId)}`);
+    /**
+     * 项目作品列表。诊断页要取「最新版本」，若被分页截断会误判为旧版本，
+     * 故与任务列表一致显式放大 pageSize。
+     */
+    list(projectId, pageSize = 100) {
+      return request(`/works?projectId=${encodeURIComponent(projectId)}&pageSize=${pageSize}`);
     },
-    mine() {
-      return request(`/works/mine`);
+    mine(pageSize = 100) {
+      return request(`/works/mine?pageSize=${pageSize}`);
     },
     upload(projectId, file) {
       const form = new FormData();
@@ -274,8 +283,9 @@ export const api = {
     list(workVersionId) {
       return request(`/diagnosis?workVersionId=${encodeURIComponent(workVersionId)}`);
     },
-    mine() {
-      return request(`/diagnosis/mine`);
+    /** 学生端「诊断反馈」取全量（后端默认 20 条会截断）。 */
+    mine(pageSize = 100) {
+      return request(`/diagnosis/mine?pageSize=${pageSize}`);
     },
     review(id, status) {
       return request(`/diagnosis/${id}`, { method: "PATCH", body: { status } });
@@ -393,8 +403,9 @@ export const api = {
     },
   },
   notifications: {
-    list() {
-      return request(`/notifications`);
+    /** 通知面板一次性取全（后端默认 20 条会截断未读数），故放大 pageSize。 */
+    list(pageSize = 100) {
+      return request(`/notifications?pageSize=${pageSize}`);
     },
     markRead(id) {
       return request(`/notifications/${id}/read`, { method: "PATCH" });

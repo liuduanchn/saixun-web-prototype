@@ -13,8 +13,22 @@ dist/
 .DS_Store
 Thumbs.db
 
+# 本地工作记忆（agent 运行日志与项目备忘，不随仓库分发）
+.workbuddy/
+
 # 前端构建校验输出（vite build --outDir dist-check）
 dist-check/
+
+# 后端 tsc 备用输出目录（workbuddyDeploy 分支下 nest build 会被 safe-delete钩子
+# 拦截时的绕行产物，见 .workbuddy/memory/2026-10-03.md）
+server/dist2/
+# 旧构建产物备份（2026-10-03 重编译前的 dist 快照，可回退）
+server/dist-old-*/
+
+# 本地 QA 截图（排查问题时抓的页面证据，不入库）
+qa-*.png
+# 废弃资源备份目录（同盘移动保留，可回退）
+assets-backup-*/
 
 # ── workbuddyDeploy 分支 ──────────────────────────────────────────────
 # 本地密钥配置（三级优先级中的第二级），绝不入库；仓库只提交 *.example.json

@@ -10,6 +10,9 @@ import { StudentTasksPage, StudentWorksPage, StudentDiagnosisPage, StudentDefens
 import { api, DEMO_MODE } from "./api.js";
 import { recordingToWav } from "./audio.js";
 import { normalizeTask, buildColumns } from "./taskModel.js";
+import { formatDateTime, stageIndex, unwrapList } from "./shape.js";
+
+const STAGE_LABELS = ["赛项理解", "方案设计", "原型开发", "作品打磨", "模拟答辩", "赛后复盘"];
 
 const criteria = [
   { name: "功能完整性", weight: "25%", points: ["需求理解与功能覆盖", "核心功能实现规范性", "功能稳定性与鲁棒性"], tone: "blue" },
@@ -193,7 +196,7 @@ function seedDemoTasks() {
   });
 }
 
-function TrainingPage({ onToast, user, projectId }) {
+function TrainingPage({ onToast, user, projectId, currentStage }) {
   const role = user?.role || "TEACHER";
   const [tasks, setTasks] = useState(DEMO_MODE ? null : []);
   const [demoTasks, setDemoTasks] = useState(DEMO_MODE ? seedDemoTasks() : null);
@@ -214,7 +217,7 @@ function TrainingPage({ onToast, user, projectId }) {
         ]);
         if (!active) return;
         // tasks.list 已改为分页返回 {items}，兼容数组与分页对象两种形状
-        const raw = Array.isArray(list) ? list : (list?.items ?? []);
+        const raw = unwrapList(list);
         setTasks(raw.map(normalizeTask));
         setCoverage(cov);
       } catch (err) {
@@ -308,7 +311,9 @@ function TrainingPage({ onToast, user, projectId }) {
 
   return <section className="module-page">
     <PageIntro icon={ClipboardText} title="训练任务中心" description="将能力要求转化为阶段任务，持续跟踪进度、审核状态与评分覆盖。" action={<button className="page-primary" onClick={() => createTask("TODO")}><Plus size={19} />新建任务</button>} />
-    <div className="stage-compact">{['赛项理解','方案设计','原型开发','作品打磨','模拟答辩','赛后复盘'].map((item,index) => <span key={item} className={index === 3 ? 'active' : ''}><i>{index + 1}</i>{item}</span>)}</div>
+    {/* 阶段轨道：此前 index===3 写死，导致所有项目都高亮「作品打磨」。
+        现按后端 Project.currentStage 推导，与驾驶舱保持一致。 */}
+    <div className="stage-compact">{STAGE_LABELS.map((item, index) => <span key={item} className={index + 1 === stageIndex(currentStage) ? 'active' : (index + 1 < stageIndex(currentStage) ? 'done' : '')}><i>{index + 1}</i>{item}</span>)}</div>
     {error && <p className="empty-state">{error}</p>}
     {loading && <p className="empty-state">任务加载中…</p>}
     <div className="board-layout"><div className="kanban-board">{columns.map((column) => <section className={`kanban-column ${column.tone}`} key={column.label}><header><h2>{column.label}</h2><span>{column.items.length}</span></header>{column.items.map((item) => {
@@ -363,7 +368,7 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast, projectId }) {
     (async () => {
       try {
         const worksRaw = await api.works.list(projectId);
-        const works = Array.isArray(worksRaw) ? worksRaw : (worksRaw?.items ?? []);
+        const works = unwrapList(worksRaw);
         const latest = [...works].sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0];
         if (!latest) {
           if (alive) { setVersion(null); setFindings([]); }
@@ -371,7 +376,7 @@ function DiagnosisPage({ onNavigate, onOpenDiagnosis, onToast, projectId }) {
         }
         if (alive) setVersion({ id: latest.id, version: latest.version });
         const diagRaw = await api.diagnosis.list(latest.id);
-        const diags = Array.isArray(diagRaw) ? diagRaw : (diagRaw?.items ?? []);
+        const diags = unwrapList(diagRaw);
         if (alive) setFindings(diags.map(normalizeDiagnosis));
       } catch (err) {
         if (alive) setError(err?.message || "作品诊断数据加载失败");
@@ -481,7 +486,7 @@ function DefensePage({ onToast, projectId }) {
     try {
       const data = await api.defense.list(projectId);
       // 兼容分页对象 {items,total} 与直接数组两种返回形态
-      const list = Array.isArray(data) ? data : (data?.items ?? []);
+      const list = unwrapList(data);
       setSessions(list);
       if (autoOpen && list.length) {
         const detail = await api.defense.get(list[0].id);
@@ -796,7 +801,7 @@ function ReviewPage({ projectId, onToast }) {
   const metrics = summary?.metrics ?? { taskCount: 12, workVersions: 3, issuesClosed: 5, defenseRounds: 3 };
   const coverage = summary?.coverage ?? { totalScorePoints: 25, coveredScorePoints: 18, coverageRate: 72 };
   const growthRaw = summary?.abilityGrowth ?? [["标准理解",86],["证据意识",78],["作品迭代",82],["答辩表达",88],["团队协作",74]];
-  const growth = (Array.isArray(growthRaw) ? growthRaw : []).map((item) =>
+  const growth = unwrapList(growthRaw).map((item) =>
     Array.isArray(item) ? { label: item[0], value: item[1] } : { label: item?.label, value: item?.value },
   );
   const report = summary?.report ?? {
@@ -966,7 +971,7 @@ function ResourcesPage({ projectId, onToast }) {
     setError("");
     api.resources.list(projectId).then((data) => {
       // 后端返回分页对象 { items, total, page, pageSize }，需取 items
-      setItems(Array.isArray(data) ? data : (data?.items ?? []));
+      setItems(unwrapList(data));
     }).catch((err) => {
       setError(err?.message || "资源加载失败");
     }).finally(() => setLoading(false));
@@ -1045,9 +1050,8 @@ const LEARNING_DEMO_SUMMARY = {
 };
 
 function formatEventTime(iso) {
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // 非法日期返回空串，避免出现 “NaN-NaN NaN:NaN”
+  return formatDateTime(iso);
 }
 
 function LearningPage({ onNavigate, projectId }) {
@@ -1062,7 +1066,7 @@ function LearningPage({ onNavigate, projectId }) {
     Promise.all([api.learning.events(), api.learning.summary()])
       .then(([ev, sum]) => {
         if (!active) return;
-        setEvents(Array.isArray(ev) ? ev : []);
+        setEvents(unwrapList(ev));
         setSummary(sum);
       })
       .catch(() => {})
@@ -1168,8 +1172,8 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
         setTenant(t);
         setTeamName(t.name);
         setAsr(asrFromSettings(t?.settings));
-        setMembers(Array.isArray(m) ? m : []);
-        setMyTeams(Array.isArray(list) ? list : []);
+        setMembers(unwrapList(m));
+        setMyTeams(unwrapList(list));
       })
       .catch(() => {});
     return () => { active = false; };
@@ -1183,7 +1187,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       setTenant(t);
       setTeamName(t.name);
       setAsr(asrFromSettings(t?.settings));
-      setMembers(Array.isArray(m) ? m : []);
+      setMembers(unwrapList(m));
     } catch {
       /* ignore */
     }
@@ -1220,7 +1224,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
     if (!window.confirm(`确定将 ${member.name}（${member.username}）移出当前团队吗？`)) return;
     try {
       const updated = await api.tenants.removeMember(member.id);
-      setMembers(Array.isArray(updated) ? updated : []);
+      setMembers(unwrapList(updated));
       setTenant((current) => (current ? { ...current, memberCount: Math.max(0, (current.memberCount || 0) - 1) } : current));
       onToast("已移除该成员");
     } catch (err) {
@@ -1239,7 +1243,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
         await onSwitchTenant(newId, { stay: true });
       }
       const list = await api.tenants.mine();
-      setMyTeams(Array.isArray(list) ? list : []);
+      setMyTeams(unwrapList(list));
       await refreshTeam();
       setNewTeam("");
       onToast("团队已创建，并切换为当前团队");
@@ -1256,7 +1260,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       setSwitching(true);
       await onSwitchTenant(tenantId, { stay: true });
       const list = await api.tenants.mine();
-      setMyTeams(Array.isArray(list) ? list : []);
+      setMyTeams(unwrapList(list));
       await refreshTeam();
       onToast("已切换到所选团队");
     } catch (err) {
@@ -1371,11 +1375,11 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
   </div></section>;
 }
 
-export function WorkspacePage({ pageKey, projectId, user, activeTenantId, onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant }) {
+export function WorkspacePage({ pageKey, projectId, user, activeTenantId, currentStage, onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant }) {
   // 注意：projectId 必须下发给所有页面组件。此前仅 review/resources/learning 收到该 prop，
   // 其余页面回退到模块常量 PROJECT_ID（= VITE_PROJECT_ID，默认 demo-project）——
   // 切换团队后请求仍指向 demo-project，被后端租户校验拦成 403，页面呈现为空。
-  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant, user, projectId };
+  const props = { onNavigate, onToast, onOpenDiagnosis, onTeamUpdate, onSwitchTenant, user, projectId, currentStage };
   const pages = { analysis: AnalysisPage, training: TrainingPage, diagnosis: DiagnosisPage, defense: DefensePage, review: ReviewPage, resources: ResourcesPage, learning: LearningPage, settings: SettingsPage, 'student-tasks': StudentTasksPage, 'student-works': StudentWorksPage, 'student-diagnosis': StudentDiagnosisPage, 'student-defense': StudentDefensePage };
   const Page = pages[pageKey] ?? AnalysisPage;
   if (pageKey === "settings") {
