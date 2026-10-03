@@ -76,7 +76,12 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
 .recommendation-copy .eyebrow { display: inline-block; padding: 5px 10px; margin-bottom: 8px; color: #6fb3ff; background: #0c3463; border-radius: 6px; font-size: 12px; }
 .recommendation-copy h1 { margin: 0 0 10px; font-size: clamp(28px, 2.4vw, 40px); letter-spacing: -.02em; }.recommendation-copy p { margin: 0; max-width: 700px; color: #bac8da; font-size: 14px; line-height: 1.75; }
 .criterion-chip { margin-top: 14px; padding: 7px 10px; display: inline-flex; align-items: center; gap: 4px; color: #dceaff; background: #0b274a; border: 1px solid #345b83; border-radius: 6px; cursor: pointer; font-size: 12px; }.criterion-chip:hover { border-color: var(--blue); }
-.score-visual { display: grid; grid-template-areas: "gauge"; place-items: center; color: var(--orange); }.score-visual strong { grid-area: gauge; font-size: 34px; line-height: 1; z-index: 1; }.score-visual .ring { grid-area: gauge; }.score-visual .ring-center strong { font-size: 34px; }.score-visual span { margin-top: 8px; color: var(--muted); font-size: 12px; }
+/* 进度环容器：改为纵向 flex，让「环」与下方「得分覆盖率」标签各占一行。
+   此前用 grid-template-areas:"gauge" 把环、环内数字、标签全塞进同一格，
+   导致标签被挤到环外侧、数字与环壁交叉（实测文字中心比环中心低 23px）。 */
+.score-visual { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--orange); }
+.score-visual .ring-center strong { font-size: 30px; }
+.score-visual > span { color: var(--muted); font-size: 12px; }
 .primary-action { min-height: 54px; padding: 0 30px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #63aaff; border-radius: 8px; background: var(--blue-strong); color: #fff; cursor: pointer; font-weight: 700; font-size: 18px; box-shadow: 0 10px 24px rgba(0,112,232,.22); }.primary-action:hover { background: #1683ff; transform: translateY(-1px); }.recommendation-panel > .primary-action { grid-column: 2; width: min(100%, 410px); justify-self: center; }
 
 .lower-grid { margin-top: 16px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr); gap: 16px; }.task-panel, .risk-panel { min-height: 286px; padding: 18px; }
@@ -184,33 +189,61 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
 
 /* 训练任务中心：真实数据驱动的看板卡片 */
 .kanban-card { position: relative; }
-.kanban-card-main { all: unset; flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
-.kanban-card-main strong { font-size: 14px; line-height: 1.35; }
-.kanban-card-main p { margin: 0; font-size: 12px; color: #64748b; }
-.kanban-card-main small { font-size: 11px; color: #94a3b8; display: inline-flex; align-items: center; gap: 4px; }
-.kanban-del { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: #94a3b8; border-radius: 6px; cursor: pointer; }
-.kanban-del:hover { background: rgba(15,23,42,.06); color: #ef4444; }
+/* JSX 里用的是 .kanban-card-body（.kanban-card-main 是历史遗留类名，未被使用），
+   按实际类名给样式，文字与主题色对齐深色卡片。 */
+.kanban-card-body { display: flex; flex-direction: column; gap: 4px; }
+.kanban-card-body strong { font-size: 14px; line-height: 1.35; }
+.kanban-card-body p { margin: 0; color: #6fb0ff; font-size: 12px; }
+.kanban-card-body small { display: inline-flex; align-items: center; gap: 5px; color: #849bb5; font-size: 11px; }
+/* .kanban-del 的样式并入下方 .kanban-actions 区块，与其它流转按钮一起维护 */
+
+/* 看板卡片内的流转按钮（开始 / 提交审核 / 确认通过 / 需修改 / 退回）
+   此前完全没有样式定义，落到浏览器默认的浅灰按钮底（#f0f0f0），
+   与深色卡片上的浅色文字撞色导致看不清。按语义补深色底：
+   推进=蓝、驳回=红、后退=中性描边。 */
+.kanban-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kanban-actions button { min-height: 28px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 4px; color: #cfe0f5; background: #0d2c56; border: 1px solid #2b5b8c; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.kanban-actions button:hover:not(:disabled) { color: #fff; background: #14406f; border-color: var(--blue); }
+.kanban-actions button:disabled { opacity: .5; cursor: not-allowed; }
+/* 语义色。必须写成 .kanban-actions .kanban-xxx —— 与上面的通用规则
+   同为「类+元素」specificity 才能覆盖，否则单类名选择器优先级更低、
+   推进/驳回/后退会全部显示成同一个蓝色。 */
+.kanban-actions .kanban-advance { color: #cfe4ff; background: #10386e; border-color: #2f6bb0; }
+.kanban-actions .kanban-reject { color: #ffb3ac; background: #3a1c22; border-color: #7d3a3f; }
+.kanban-actions .kanban-reject:hover:not(:disabled) { color: #fff; background: #4d252c; border-color: var(--red); }
+.kanban-actions .kanban-back { color: #a9bdd4; background: transparent; border-color: #33587f; }
+.kanban-actions .kanban-back:hover:not(:disabled) { color: #fff; background: #0f2d52; }
+/* 删除按钮保持透明方块（定位在卡片右上角），仅补深色 hover 反馈 */
+.kanban-actions .kanban-del { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: #94a3b8; background: transparent; border: none; border-radius: 6px; cursor: pointer; }
+.kanban-actions .kanban-del:hover { color: #ff8a80; background: #3a1c22; }
 
 /* 作品诊断中心：真实诊断结果列表 */
+/* 主题对齐：本块原为浅色主题遗留（白底 + 灰字），在深蓝界面下白底白字不可读。
+   仅把底色/边框/文字换成页面既有的深色变量，不改动结构与尺寸。 */
 .upload-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-.diagnosis-meta { font-size: 13px; color: #64748b; margin: 4px 0 12px; }
+.diagnosis-meta { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
 .diagnosis-list { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
-.diagnosis-item { border: 1px solid rgba(15,23,42,.08); border-radius: 12px; padding: 14px 16px; background: #fff; }
+.diagnosis-item { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: #0a2344; color: var(--text); }
 .diagnosis-item-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .diagnosis-item-head strong { font-size: 15px; }
 .diagnosis-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.diagnosis-actions button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(15,23,42,.15); background: #f8fafc; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.diagnosis-actions button { display: inline-flex; align-items: center; gap: 6px; color: #cfe0f5; background: #0d2c56; border: 1px solid #2b5b8c; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.diagnosis-actions button:hover:not(:disabled) { color: #fff; background: #123566; border-color: var(--blue); }
 .diagnosis-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .diagnosis-actions .review-state { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
 .diagnosis-actions .review-state.confirmed { background: #dcfce7; color: #15803d; }
 .diagnosis-actions .review-state.rejected { background: #fee2e2; color: #b91c1c; }
 
 /* —— P2 赛项解析中心 —— */
-.parse-panel textarea { width: 100%; min-height: 130px; border: 1px solid rgba(15,23,42,.12); border-radius: 10px; padding: 12px 14px; font-size: 14px; font-family: inherit; resize: vertical; box-sizing: border-box; }
+/* 上方「赛项规程解析（LLM）」与下方三栏区域此前上下贴死（实测间距 0px），
+   这里补一个与页面其它模块一致的纵向间距。 */
+.parse-panel { margin-bottom: 16px; }
+.parse-panel textarea { width: 100%; min-height: 130px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 14px; font-family: inherit; resize: vertical; box-sizing: border-box; color: var(--text); background: #051a34; }
+.parse-panel textarea:focus { outline: 2px solid #1a82ec; outline-offset: 0; }
 .parse-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-.draft-box { margin-top: 16px; border: 1px dashed rgba(37,99,235,.4); border-radius: 12px; padding: 14px 16px; background: rgba(37,99,235,.04); }
-.draft-box h3 { font-size: 14px; margin: 0 0 10px; color: #1d4ed8; }
-.confirm-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid rgba(15,23,42,.06); font-size: 14px; }
+.draft-box { margin-top: 16px; border: 1px dashed #2f6bb0; border-radius: 12px; padding: 14px 16px; background: rgba(22,131,255,.07); }
+.draft-box h3 { font-size: 14px; margin: 0 0 10px; color: #8cc2ff; }
+.confirm-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #173b64; font-size: 14px; }
 .confirm-row button { margin-left: auto; border: none; background: transparent; color: #94a3b8; cursor: pointer; padding: 2px 4px; }
 .confirm-row button:hover { color: #ef4444; }
 
