@@ -105,3 +105,23 @@ The focused comparisons were required because the full-view comparison could not
 - No actionable P0, P1 or P2 findings remain.
 
 final result: passed
+
+---
+
+## 时效说明（2026-10-04追加）
+
+本文档是**2026-08~09 期间**以「方案 1（`reference-option-1.png`）」为基准做的界面比对记录，
+所引用的截图（`implementation-*.png`、`qa-comparison-*.png`）均为**当时版本**，
+不代表当前界面状态。
+
+此后的界面演进（均有实测依据）：
+
+| 时间 | 变更 | 影响 |
+| --- | --- | --- |
+| 2026-10-03 | 移除 `@fontsource/noto-sans-sc`（约 23MB 字体切片），改用系统字体栈 | 本文档中「Noto Sans SC 本地打包」的说法已失效 |
+| 2026-10-03 | 进度环由 950KB 不透明 PNG 位图改为内联 SVG（`src/ProgressRing.jsx`） | 界面观感变化，详见 `问题排查清单-20261003.md` |
+| 2026-10-03 | 清理浅色主题遗留样式，统一深色主题 | 诊断卡片由白底改为深底，看板按钮由浅灰改为语义深色 |
+| 2026-10-04 | 顶栏日期改为系统实时日期；项目阶段接入 `Project.currentStage` | 阶段轨道随团队变化，不再固定「作品打磨」 |
+| 2026-10-04 | 修复学生登录后仍停在教师端驾驶舱的问题 | 角色落地页正确 |
+
+**当前界面的权威截图请看 `docs/readme-assets/`**（15 张，随每次界面变更重新抓取）。

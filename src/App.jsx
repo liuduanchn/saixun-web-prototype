@@ -84,7 +84,10 @@ export function App() {
   const profileAreaRef = useRef(null);
   const notificationAreaRef = useRef(null);
   const [user, setUser] = useState(() => loadSession(window.localStorage));
-  const [activeNav, setActiveNav] = useState(user?.role === "STUDENT" ? "我的任务" : "竞赛项目驾驶舱");
+  // 落地页按角色决定。注意初值只在挂载时算一次，而登录页回填的 user 是挂载之后才有的，
+  // 因此还需下面那个 effect 兜底 —— 否则学生登录后仍停在教师端驾驶舱。
+  const homeNavOf = (u) => (u?.role === "STUDENT" ? "我的任务" : "竞赛项目驾驶舱");
+  const [activeNav, setActiveNav] = useState(() => homeNavOf(loadSession(window.localStorage)));
   const [tasks, setTasks] = useState(DEMO_MODE ? initialTasks : []);
   const [coverage, setCoverage] = useState(null);
   const [coverageError, setCoverageError] = useState("");
@@ -186,6 +189,14 @@ export function App() {
       document.removeEventListener("visibilitychange", sync);
     };
   }, []);
+
+  // 登录成功后按角色落到对应首页（教师=驾驶舱，学生=我的任务）。
+  // 依赖 user 而非 activeNav：只在「用户身份发生变化」时纠正落地页，
+  // 不干扰用户自己在侧边栏里的导航选择。
+  useEffect(() => {
+    if (!user) return;
+    setActiveNav(homeNavOf(user));
+  }, [user?.id, user?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!profileOpen) return undefined;
