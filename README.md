@@ -125,7 +125,7 @@ flowchart LR
 ## 技术栈
 
 - React 19 + Vite 6：页面与交互状态；
-- NestJS 11 + Prisma 6：真实鉴权、多租户隔离与业务数据（本地 PostgreSQL / 部署环境 SQLite）；
+- NestJS 11 + Prisma 6：真实鉴权、多租户隔离与业务数据（SQLite；早期版本曾用 PostgreSQL）；
 - Phosphor Icons：界面图标；
 - OpenAI 兼容协议：赛项解析、作品诊断、模拟答辩的模型调用（兼容 OpenAI / DeepSeek / 硅基流动 / 通义等）；
 - Node.js Test Runner：分页解包、日期格式化、阶段映射、会话与通知等逻辑测试。
@@ -176,10 +176,13 @@ curl http://localhost:17100/api/config/status
 **步骤**
 
 ```bash
-# 1. 数据库（PostgreSQL 需已在 :5432 运行）
+# 1. 后端依赖 + 数据库初始化（SQLite，无需外部数据库服务）
 cd server
 npm install
-npx prisma generate && npx prisma migrate deploy && npm run prisma:seed
+npx prisma generate
+npx prisma migrate deploy      # 首次会创建 server/prisma/saixun.db
+npm run prisma:seed            # 灌入演示数据（10 租户 / 11 项目 / 41 账号）
+npm run prisma:seed:instances  # 追加 6 个实例项目团队的差异化数据
 
 # 2. 启动后端（读取 server/.env 的 PORT，当前为 17100）
 npx nest build && node dist/main
@@ -257,12 +260,18 @@ saixun-web-prototype/
 
 ## 部署说明
 
-| 目标 | 分支 / 路径 | 说明 |
-| --- | --- | --- |
-| WorkBuddy 托管 | `workbuddyDeploy` | 单端口自包含（NestJS 同时托管前端与 API）+ SQLite，入口 `https://saixun-cabin.app.workbuddy.host/`，详见 [WORKBUDDY_DEPLOY.md](WORKBUDDY_DEPLOY.md) |
-| GitHub Pages | `main` | 由 GitHub Actions 自动构建发布 `dist/client`，[在线地址](https://liuduanchn.github.io/saixun-web-prototype/)，详见 [DEPLOYMENT.md](DEPLOYMENT.md) |
+当前默认分支 `main` 采用 **SQLite + 单端口自包含**形态（NestJS 同时托管前端与 API），
+可直接部署到 WorkBuddy 托管平台：
 
-两条链路的**数据层不能互迁**：SQLite 分支的枚举被降级为字符串、JSON 存为文本。
+| 目标 | 说明 |
+| --- | --- |
+| **WorkBuddy 托管**（当前 `main`） | 入口 `https://saixun-cabin.app.workbuddy.host/`，执行 `npm run workbuddy:install` + `npm run workbuddy:start`，详见 [WORKBUDDY_DEPLOY.md](WORKBUDDY_DEPLOY.md) |
+| GitHub Pages | `base` 为 `/saixun-web-prototype/`；CI 需 `DATABASE_URL` 为 SQLite 路径才能构建，详见 [DEPLOYMENT.md](DEPLOYMENT.md) |
+
+> **数据层历史说明**：本项目早期 `main` 使用 PostgreSQL + Railway/GitHub Pages 链路，
+> 2026-10-04 起 `main` 已快进到部署分支，统一为 SQLite 形态。
+> 若需恢复 PostgreSQL 链路，请从提交 `428ae57`（`feat(data): 实例项目示例数据脚本…`）分支出去。
+> `server/prisma/schema.prisma` 中 `provider = "sqlite"` 是该形态的标志。
 
 ## 当前范围
 
