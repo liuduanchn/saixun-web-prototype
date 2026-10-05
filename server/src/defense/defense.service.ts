@@ -141,7 +141,11 @@ export class DefenseService {
           `作品摘要：\n${workText || '（未提供可解析作品）'}\n\n请提出第1个答辩问题。`,
       },
     ];
-    const raw = await this.ai.chat(messages, { temperature: 0.6, maxTokens: 600 });
+    const raw = await this.ai.chat(messages, {
+      temperature: 0.6,
+      maxTokens: 600,
+      feature: 'defense',
+    });
     const json = extractJson<{ question?: string }>(raw);
     if (!json?.question) throw new Error('AI 未返回问题');
     return json.question;
@@ -262,7 +266,11 @@ export class DefenseService {
           `当前第 ${round}/${maxRounds} 轮。${isLast ? '请直接给出总评(finalSummary)。' : '请评分并给出下一轮追问(nextQuestion)。'}`,
       },
     ];
-    const raw = await this.ai.chat(messages, { temperature: 0.5, maxTokens: 1200 });
+    const raw = await this.ai.chat(messages, {
+      temperature: 0.5,
+      maxTokens: 1200,
+      feature: 'defense',
+    });
     const json = extractJson<{
       evaluation?: { logic: number; evidence: number; accuracy: number; comment: string };
       nextQuestion?: string;

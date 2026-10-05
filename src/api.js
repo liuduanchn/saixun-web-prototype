@@ -184,6 +184,23 @@ export const api = {
       });
     },
   },
+  // 大模型（平台级）配置：读脱敏视图 / 保存 / 测试连接 / 公开状态
+  // 说明：这三个受保护接口只对平台管理员开放，非管理员会收到 403（ApiError.status === 403），
+  //      设置中心据此决定是否渲染配置卡片。
+  config: {
+    status() {
+      return request("/config/status");
+    },
+    llm() {
+      return request("/config/llm");
+    },
+    saveLlm(patch) {
+      return request("/config/llm", { method: "PATCH", body: patch });
+    },
+    testLlm() {
+      return request("/config/llm/test", { method: "POST" });
+    },
+  },
   tenants: {
     mine() {
       return request("/tenants/mine");
@@ -247,6 +264,21 @@ export const api = {
     },
     remove(id) {
       return request(`/tasks/${id}`, { method: "DELETE" });
+    },
+    /**
+     * AI 生成阶段任务草稿（不落库，教师确认后再批量创建）。
+     * 响应含 source 字段：'ai' 走真实模型，'heuristic' 表示未配置 Key 已降级。
+     */
+    aiGenerate(projectId) {
+      return request("/tasks/ai-generate", { method: "POST", body: { projectId } });
+    },
+    /** AI 动态风险预警（替代此前写死的文案） */
+    aiRisk(projectId) {
+      return request(`/tasks/ai-risk?projectId=${encodeURIComponent(projectId)}`);
+    },
+    /** AI 推荐任务应关联的评分点（只给建议，不改关联关系） */
+    aiSuggest(projectId) {
+      return request(`/tasks/ai-suggest?projectId=${encodeURIComponent(projectId)}`);
     },
   },
   works: {

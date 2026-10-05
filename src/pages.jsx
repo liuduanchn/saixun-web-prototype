@@ -203,6 +203,12 @@ function TrainingPage({ onToast, user, projectId, currentStage }) {
   const [coverage, setCoverage] = useState(null);
   const [loading, setLoading] = useState(!DEMO_MODE);
   const [error, setError] = useState("");
+  // AI 相关状态：任务草稿、风险预警、评分点建议
+  const [aiDrafts, setAiDrafts] = useState([]);
+  const [aiRisks, setAiRisks] = useState([]);
+  const [aiSource, setAiSource] = useState("");
+  const [aiBusy, setAiBusy] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
     if (DEMO_MODE || !projectId) return undefined;
@@ -264,6 +270,126 @@ function TrainingPage({ onToast, user, projectId, currentStage }) {
     }
   };
 
+  // ── AI 能力：与赛项解析 / 作品诊断 / 模拟答辩走同一份 .env 配置 ──
+  // source=heuristic 表示后端未配置 API Key 已降级为确定性规则，此处显式提示用户。
+
+  const notifyDegraded = (source) => {
+    if (source === "heuristic") {
+      onToast("API Key 未配置，已降级为内置规则生成（非大模型输出）");
+    }
+  };
+
+  const runAiGenerate = async () => {
+    if (DEMO_MODE || !projectId) return;
+    setAiBusy("generate");
+    try {
+      const res = await api.tasks.aiGenerate(projectId);
+      setAiDrafts(res.drafts || []);
+      setAiSource(res.source);
+      notifyDegraded(res.source);
+      if (res.source === "ai") onToast(`AI 已生成 ${res.drafts.length} 条任务建议`);
+    } catch (err) {
+      onToast(err?.message || "AI 生成失败");
+    } finally {
+      setAiBusy("");
+    }
+  };
+
+  // 把选中的草稿真正落库：按标题建任务，并关联评分点
+  const adoptDraft = async (draft) => {
+    if (DEMO_MODE || !projectId) return;
+    try {
+      const criteria = await api.criteria.list(projectId);
+      const points = unwrapList(criteria).flatMap((c) => c.scorePoints || []);
+      const ids = draft.scorePointNames
+        .map((n) => points.find((p) => p.name === n)?.id)
+        .filter(Boolean);
+      const created = await api.tasks.create({
+        projectId,
+        title: draft.title,
+        status: "TODO",
+        scorePointIds: ids,
+      });
+      setTasks((cur) => [normalizeTask(created), ...cur]);
+      setAiDrafts((cur) => cur.filter((d) => d !== draft));
+      onToast("已加入待办看板");
+    } catch (err) {
+      onToast(err?.message || "加入失败");
+    }
+  };
+
+  const adoptAllDrafts = async () => {
+    if (DEMO_MODE || !projectId || aiDrafts.length === 0) return;
+    setAiBusy("adopt");
+    try {
+      const criteria = await api.criteria.list(projectId);
+      const points = unwrapList(criteria).flatMap((c) => c.scorePoints || []);
+      for (const draft of aiDrafts) {
+        const ids = draft.scorePointNames
+          .map((n) => points.find((p) => p.name === n)?.id)
+          .filter(Boolean);
+        // eslint-disable-next-line no-await-in-loop
+        const created = await api.tasks.create({
+          projectId, title: draft.title, status: "TODO", scorePointIds: ids,
+        });
+        setTasks((cur) => [normalizeTask(created), ...cur]);
+      }
+      onToast(`已加入 ${aiDrafts.length} 条任务`);
+      setAiDrafts([]);
+    } catch (err) {
+      onToast(err?.message || "批量加入失败");
+    } finally {
+      setAiBusy("");
+    }
+  };
+
+  const runAiRisk = async () => {
+    if (DEMO_MODE || !projectId) return;
+    setAiBusy("risk");
+    try {
+      const res = await api.tasks.aiRisk(projectId);
+      setAiRisks(res.risks || []);
+      setAiSource(res.source);
+      notifyDegraded(res.source);
+    } catch (err) {
+      onToast(err?.message || "风险分析失败");
+    } finally {
+      setAiBusy("");
+    }
+  };
+
+  const runAiSuggest = async () => {
+    if (DEMO_MODE || !projectId) return;
+    setAiBusy("suggest");
+    try {
+      const res = await api.tasks.aiSuggest(projectId);
+      setSuggestions(res.suggestions || []);
+      setAiSource(res.source);
+      notifyDegraded(res.source);
+      if (res.source === "ai") {
+        onToast(res.suggestions.length ? `AI 为 ${res.suggestions.length} 条任务推荐了评分点` : "AI 未发现需要补充关联的任务");
+      }
+    } catch (err) {
+      onToast(err?.message || "推荐失败");
+    } finally {
+      setAiBusy("");
+    }
+  };
+
+  // 页面进入时自动拉一次风险预警（原来的右侧卡片是写死文案）
+  useEffect(() => {
+    if (DEMO_MODE || !projectId) return undefined;
+    let active = true;
+    api.tasks.aiRisk(projectId)
+      .then((res) => {
+        if (!active) return;
+        setAiRisks(res.risks || []);
+        setAiSource(res.source);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [projectId]);
+
   const removeTask = async (item) => {
     if (DEMO_MODE) {
       setDemoTasks((cur) => cur.filter((t) => t.id !== item.id));
@@ -305,9 +431,9 @@ function TrainingPage({ onToast, user, projectId, currentStage }) {
     }));
   })();
 
-  const covCovered = coverage ? coverage.coveredScorePoints : 18;
-  const covTotal = coverage ? coverage.totalScorePoints : 25;
-  const covRate = coverage ? coverage.coverageRate : 72;
+  const covCovered = coverage?.coveredScorePoints ?? 0;
+  const covTotal = coverage?.totalScorePoints ?? 0;
+  const covRate = coverage?.coverageRate ?? 0;
 
   return <section className="module-page">
     <PageIntro icon={ClipboardText} title="训练任务中心" description="将能力要求转化为阶段任务，持续跟踪进度、审核状态与评分覆盖。" action={<button className="page-primary" onClick={() => createTask("TODO")}><Plus size={19} />新建任务</button>} />
@@ -334,7 +460,80 @@ function TrainingPage({ onToast, user, projectId, currentStage }) {
           <button className="kanban-del" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); removeTask(item); }}><X size={15} /></button>
         </div>
       </article>;
-    })}<button className="add-task" onClick={() => createTask(statusKeyOf(column.label))}><Plus size={16} />新建任务</button></section>)}</div><aside className="board-summary"><section className="module-panel"><h2>评分点覆盖</h2><div className="coverage-big"><strong>{covCovered}</strong><span>/{covTotal}</span></div><div className="progress-line"><i style={{ width: `${covRate}%` }} /></div><p><span>已覆盖 {covCovered}</span><span>未覆盖 {covTotal - covCovered}</span></p></section><section className="module-panel warning-box"><h2><WarningCircle size={21} />风险预警</h2><strong>展示材料缺少应用成效证据</strong><p>可能影响“应用成效”评分点得分。</p><button onClick={() => onToast("已定位到应用成效修改任务")}>去处理<ArrowRight size={15} /></button></section></aside></div>
+    })}<button className="add-task" onClick={() => createTask(statusKeyOf(column.label))}><Plus size={16} />新建任务</button></section>)}</div><aside className="board-summary">
+      <section className="module-panel">
+        <div className="section-heading">
+          <h2>评分点覆盖</h2>
+          <button className="ai-mini-btn" onClick={runAiGenerate} disabled={aiBusy === "generate"}>
+            <Sparkle size={15} weight="fill" />
+            {aiBusy === "generate" ? "生成中…" : "AI 生成任务"}
+          </button>
+        </div>
+        <div className="coverage-big"><strong>{covCovered}</strong><span>/{covTotal}</span></div>
+        <div className="progress-line"><i style={{ width: `${covRate}%` }} /></div>
+        <p><span>已覆盖 {covCovered}</span><span>未覆盖 {Math.max(0, covTotal - covCovered)}</span></p>
+      </section>
+
+      {/* AI 草稿区：确认后才落库，避免模型输出直接污染看板 */}
+      {aiDrafts.length > 0 && <section className="module-panel ai-draft-panel">
+        <div className="section-heading">
+          <h2><Sparkle size={17} weight="fill" />AI 任务建议</h2>
+          <button className="ai-mini-btn primary" onClick={adoptAllDrafts} disabled={aiBusy === "adopt"}>
+            {aiBusy === "adopt" ? "加入中…" : "全部加入"}
+          </button>
+        </div>
+        {aiSource === "heuristic" && <p className="ai-degraded-note">API Key 未配置，以下为内置规则生成的建议</p>}
+        <div className="ai-draft-list">
+          {aiDrafts.map((d) => <div className="ai-draft-item" key={d.title}>
+            <div className="ai-draft-head">
+              <strong>{d.title}</strong>
+              <span className={`priority ${d.priority === "HIGH" ? "high" : d.priority === "LOW" ? "medium" : "medium"}`}>{d.priority === "HIGH" ? "高优先级" : d.priority === "LOW" ? "低优先级" : "中优先级"}</span>
+            </div>
+            {d.rationale && <small>{d.rationale}</small>}
+            <div className="ai-draft-foot">
+              <span className="ai-draft-points">{d.scorePointNames.length ? `关联 ${d.scorePointNames.join("、")}` : "未关联评分点"}</span>
+              <button className="ai-adopt-btn" onClick={() => adoptDraft(d)}><Plus size={14} />加入待办</button>
+            </div>
+          </div>)}
+        </div>
+      </section>}
+
+      {/* 风险预警：此前是写死文案，现由 AI 依据覆盖情况与任务完成度实时生成 */}
+      <section className="module-panel warning-box">
+        <div className="section-heading">
+          <h2><WarningCircle size={21} />风险预警</h2>
+          <button className="ai-mini-btn" onClick={runAiRisk} disabled={aiBusy === "risk"} title="重新分析">
+            <Sparkle size={15} weight="fill" />
+            {aiBusy === "risk" ? "分析中…" : "AI 复评"}
+          </button>
+        </div>
+        {aiSource === "heuristic" && <p className="ai-degraded-note">API Key 未配置，以下为内置规则推断</p>}
+        {aiRisks.length === 0
+          ? <div className="ai-loading-note"><i />{aiBusy === "risk" ? "模型分析中，通常需 6-10 秒…" : "正在加载风险预警…"}</div>
+          : <div className="ai-risk-list">{aiRisks.map((r) => <div className={`ai-risk-item ${r.level.toLowerCase()}`} key={r.title}>
+              <strong>{r.title}</strong>
+              <p>{r.detail}</p>
+              {r.action && <small><Sparkle size={13} />{r.action}</small>}
+            </div>)}</div>}
+      </section>
+
+      {/* AI 评分点推荐：只给建议，不自动改关联关系 */}
+      <section className="module-panel">
+        <div className="section-heading">
+          <h2>AI 关联评分点</h2>
+          <button className="ai-mini-btn" onClick={runAiSuggest} disabled={aiBusy === "suggest"}>
+            <Sparkle size={15} weight="fill" />
+            {aiBusy === "suggest" ? "分析中…" : "AI 推荐"}
+          </button>
+        </div>
+        {suggestions.length === 0
+          ? <p className="muted">点击「AI 推荐」为未关联评分点的任务给出建议。</p>
+          : <div className="ai-suggest-list">{suggestions.map((s) => <div className="ai-suggest-item" key={s.taskTitle}>
+              <strong>{s.taskTitle}</strong>
+              <small>建议关联：{s.scorePointNames.join("、")}</small>
+            </div>)}</div>}
+      </section>
+    </aside></div>
   </section>;
 }
 
@@ -1159,6 +1358,61 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       return base;
     });
   };
+  // ===== 大模型（平台级）配置 =====
+  // 与 SystemConfig 表的 llm 段一一对应；接口只对平台管理员开放，非管理员收到 403 → 不渲染卡片。
+  const [llm, setLlm] = useState({
+    baseUrl: "", apiKey: "", model: "",
+    models: { criteria: "", diagnosis: "", defense: "", tasks: "" },
+    enabledFeatures: { criteria: true, diagnosis: true, defense: true, tasks: true },
+  });
+  const [llmMeta, setLlmMeta] = useState({ llmApiKeySet: false, status: null });
+  const [llmAllowed, setLlmAllowed] = useState(false);
+  const [llmSaving, setLlmSaving] = useState(false);
+  const [llmTesting, setLlmTesting] = useState(false);
+  const [llmTest, setLlmTest] = useState(null);
+  const [llmAdvanced, setLlmAdvanced] = useState(false);
+  // 服务商预设：**只填接口地址**，模型名一律留空 —— 按决策②「不设置默认模型」，
+  // 模型必须由使用者显式填写，避免界面上出现一个并不生效的默认值。
+  const LLM_PRESETS = {
+    siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", modelHints: ["deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-7B-Instruct"] },
+    deepseek: { baseUrl: "https://api.deepseek.com/v1", modelHints: ["deepseek-chat"] },
+    openai: { baseUrl: "https://api.openai.com/v1", modelHints: ["gpt-4o-mini"] },
+  };
+  const llmFromServer = (data) => ({
+    baseUrl: data?.baseUrl || "",
+    // 回显的是脱敏值；保存时后端识别「以 **** 结尾」并保留库中原密钥
+    apiKey: data?.llmApiKeyMasked || "",
+    model: data?.model || "",
+    models: { criteria: "", diagnosis: "", defense: "", tasks: "", ...(data?.models || {}) },
+    enabledFeatures: { criteria: true, diagnosis: true, defense: true, tasks: true, ...(data?.features || {}) },
+  });
+  const loadLlm = async () => {
+    if (DEMO_MODE) return;
+    try {
+      const data = await api.config.llm();
+      setLlm(llmFromServer(data));
+      setLlmMeta({ llmApiKeySet: Boolean(data?.llmApiKeySet), status: data?.status || null });
+      setLlmAllowed(true);
+    } catch (err) {
+      // 403 表示当前账号不是平台管理员：属正常情况，静默隐藏卡片即可
+      setLlmAllowed(false);
+      if (err?.status && err.status !== 403) onToast(err?.message || "读取大模型配置失败");
+    }
+  };
+  // 测试连接与保存按钮的可用性：三个必填项齐备才允许
+  const llmReadyToTest = Boolean((llm.baseUrl || "").trim() && (llm.apiKey || "").trim() && (llm.model || "").trim());
+  // 模型候选只作输入提示（datalist），**不预选**任何值
+  const LLM_MODEL_HINTS = Array.from(new Set(Object.values(LLM_PRESETS).flatMap((p) => p.modelHints)));
+  // 预设只覆盖接口地址，刻意不动模型名
+  const applyLlmPreset = (name) => {
+    const p = LLM_PRESETS[name];
+    if (p) setLlm((c) => ({ ...c, baseUrl: p.baseUrl }));
+  };
+  const toggleLlmFeature = (key) =>
+    setLlm((c) => ({ ...c, enabledFeatures: { ...c.enabledFeatures, [key]: !c.enabledFeatures[key] } }));
+  const sourceLabel = (src) =>
+    ({ platform: "设置中心配置", env: "环境变量", file: "本地配置文件", none: "未配置" }[src] || src || "未配置");
+
   // 当前账号可切换的全部团队（含 isActive 标记）
   const [myTeams, setMyTeams] = useState(DEMO_MODE ? [{ tenantId: "demo-tenant", name: "智造先锋队（演示）", isActive: true }, { tenantId: "innovation-tenant", name: "创新实验队（演示）", isActive: false }] : []);
   const [switching, setSwitching] = useState(false);
@@ -1176,6 +1430,9 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
         setMyTeams(unwrapList(list));
       })
       .catch(() => {});
+    // 大模型配置单独取（非平台管理员会 403，不能和上面的 Promise.all 混在一起，
+    // 否则一处 403 会把团队信息一起吞掉）
+    loadLlm();
     return () => { active = false; };
   }, [user, activeTenantId]);
 
@@ -1302,6 +1559,60 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
     }
   };
 
+  // 保存大模型配置（平台级单例）。密钥三态由后端处理：
+  // 留空/脱敏值 → 保留原值；显式清除需传空串（这里不做，避免误删）
+  const saveLlm = async () => {
+    if (DEMO_MODE) { onToast("演示模式：未连接后端，大模型配置未保存"); return; }
+    const baseUrl = (llm.baseUrl || "").trim();
+    const model = (llm.model || "").trim();
+    if (!baseUrl) { onToast("请填写接口地址（Base URL）"); return; }
+    if (!model) { onToast("请填写模型名称（不预置默认模型）"); return; }
+
+    const payload = { baseUrl, model };
+    const key = (llm.apiKey || "").trim();
+    if (key && !key.endsWith("****")) payload.apiKey = key;
+    const models = {};
+    Object.entries(llm.models || {}).forEach(([k, v]) => {
+      if (v && String(v).trim()) models[k] = String(v).trim();
+    });
+    if (Object.keys(models).length) payload.models = models;
+    // 只提交界面上的三个开关；tasks 刻意不提交 ——
+    // 训练任务的大模型入口本期不提供单独开关，不提交才能保留服务端原值
+    // （若在这里写死 false，保存一次就会把任务中心的 AI 静默关掉）
+    payload.enabledFeatures = {
+      criteria: !!llm.enabledFeatures.criteria,
+      diagnosis: !!llm.enabledFeatures.diagnosis,
+      defense: !!llm.enabledFeatures.defense,
+    };
+
+    setLlmSaving(true);
+    try {
+      const data = await api.config.saveLlm(payload);
+      setLlm(llmFromServer(data));
+      setLlmMeta({ llmApiKeySet: Boolean(data?.llmApiKeySet), status: data?.status || null });
+      setLlmTest(null);
+      onToast("大模型配置已保存");
+    } catch (err) {
+      onToast(err?.message || "保存失败");
+    } finally {
+      setLlmSaving(false);
+    }
+  };
+
+  // 测试连接：走的是**已保存**的配置（后端从库里读），所以改了字段要先保存再测
+  const testLlm = async () => {
+    if (DEMO_MODE) { onToast("演示模式：无法测试连接"); return; }
+    setLlmTesting(true);
+    setLlmTest(null);
+    try {
+      setLlmTest(await api.config.testLlm());
+    } catch (err) {
+      setLlmTest({ ok: false, message: err?.message || "测试失败" });
+    } finally {
+      setLlmTesting(false);
+    }
+  };
+
   return <section className="module-page"><PageIntro icon={GearSix} title="设置中心" description="管理团队、成员与账号安全。" /><div className="settings-layout">
     <section className="module-panel account-settings">
       <h2>账号信息</h2>
@@ -1372,6 +1683,64 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       <label className="field-row"><span>音频字段名</span><input value={asr.asrField} disabled={asr.asrProvider === "siliconflow"} onChange={(e) => setAsr((c) => ({ ...c, asrField: e.target.value }))} placeholder="默认 file" aria-label="音频字段名" /></label>
       <button className="page-primary save-settings" onClick={saveAsr} disabled={asrSaving}>{asrSaving ? "保存中…" : "保存 ASR 配置"}</button>
     </section>
+
+    {llmAllowed && <section className="module-panel llm-settings">
+      <h2>大模型（AI）配置</h2>
+      <p className="muted small">全站共用一份配置，赛项解析、作品诊断、模拟答辩与训练任务都用它调用大模型。密钥仅保存在后端，不会下发到浏览器；改动需先保存，再点「测试连接」。</p>
+
+      {/* 注意：account-card 的栅格是「58px 图标 | 文字 | 标签」，
+          首个子元素必须是 svg，否则文字会被挤进 58px 窄列变成竖排 */}
+      <div className="account-card">
+        <Brain size={52} weight="duotone" />
+        <div>
+          <strong>{llmMeta.status?.aiConfigured ? "已配置：AI 走真实大模型" : "未配置：AI 走内置启发式"}</strong>
+          <span>{llmMeta.status?.aiModel ? `模型：${llmMeta.status.aiModel}` : "模型：未填写"} · 来源：{sourceLabel(llmMeta.status?.aiConfigSource)}</span>
+        </div>
+        <StatusTag tone={llmMeta.status?.aiConfigured ? "green" : "orange"}>{llmMeta.status?.aiConfigured ? "已启用" : "未启用"}</StatusTag>
+      </div>
+
+      <label className="field-row"><span>服务商预设</span>
+        <select defaultValue="" onChange={(event) => applyLlmPreset(event.target.value)} aria-label="大模型服务商预设">
+          <option value="" disabled>选择预设（只填接口地址，模型需自行填写）</option>
+          <option value="siliconflow">硅基流动 SiliconFlow</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </label>
+      <label className="field-row"><span>接口地址</span><input value={llm.baseUrl} onChange={(event) => setLlm((c) => ({ ...c, baseUrl: event.target.value }))} placeholder="https://api.siliconflow.cn/v1" aria-label="大模型接口地址" /></label>
+      <label className="field-row"><span>API Key</span><input type="password" value={llm.apiKey} onChange={(event) => setLlm((c) => ({ ...c, apiKey: event.target.value }))} placeholder={llmMeta.llmApiKeySet ? "已配置（留空则保持不变）" : "填写服务商密钥"} aria-label="大模型 API Key" /></label>
+      <label className="field-row"><span>模型名称</span><input list="llm-model-hints" value={llm.model} onChange={(event) => setLlm((c) => ({ ...c, model: event.target.value }))} placeholder="必填，不预置默认值" aria-label="大模型名称" /></label>
+      <datalist id="llm-model-hints">{LLM_MODEL_HINTS.map((m) => <option key={m} value={m} />)}</datalist>
+
+      <h3>功能开关</h3>
+      {[["criteria", "赛项解析", "AI 解析评分要素"], ["diagnosis", "作品诊断", "AI 逐项诊断作品"], ["defense", "模拟答辩", "AI 出题与评分"]].map(([key, title, desc]) => (
+        <button key={key} className="preference-row" onClick={() => toggleLlmFeature(key)}>
+          <span><strong>{title}</strong><small>{desc}</small></span>
+          <i className={llm.enabledFeatures[key] ? "on" : ""}><b /></i>
+        </button>
+      ))}
+      <button className="preference-row" disabled title="随本配置一并生效，本期不提供单独开关">
+        <span><strong>训练任务</strong><small>AI 拆解 / 风险报告 / 评分点建议（随本配置一并生效）</small></span>
+        <i className={llm.enabledFeatures.tasks ? "on" : ""}><b /></i>
+      </button>
+
+      <button className="preference-row" onClick={() => setLlmAdvanced((v) => !v)}>
+        <span><strong>{llmAdvanced ? "收起分功能模型" : "分功能模型（可选）"}</strong><small>留空则统一使用上方模型</small></span>
+        <i className={llmAdvanced ? "on" : ""}><b /></i>
+      </button>
+      {llmAdvanced && [["criteria", "赛项解析"], ["diagnosis", "作品诊断"], ["defense", "模拟答辩"]].map(([key, label]) => (
+        <label className="field-row" key={key}><span>{label}</span>
+          <input value={llm.models[key] || ""} onChange={(event) => setLlm((c) => ({ ...c, models: { ...c.models, [key]: event.target.value } }))} placeholder="留空使用统一模型" aria-label={`${label}模型`} />
+        </label>
+      ))}
+
+      {llmTest && <p className="muted small">{llmTest.ok ? `连接成功：${llmTest.latencyMs}ms · 模型 ${llmTest.model} · 返回 ${JSON.stringify(llmTest.message)}` : `连接失败：${llmTest.message}`}</p>}
+      <div className="inline-field">
+        <button className="page-primary" onClick={testLlm} disabled={llmTesting || !llmReadyToTest}>{llmTesting ? "测试中…" : "测试连接"}</button>
+        <button className="page-primary save-settings" onClick={saveLlm} disabled={llmSaving}>{llmSaving ? "保存中…" : "保存大模型配置"}</button>
+      </div>
+      {!llmReadyToTest && <p className="muted small">测试连接需先填齐「接口地址 / API Key / 模型名称」；测试用的是<strong>已保存</strong>的配置。</p>}
+    </section>}
   </div></section>;
 }
 

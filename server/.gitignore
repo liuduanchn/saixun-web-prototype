@@ -18,5 +18,10 @@ prisma/*.db
 prisma/*.db-*
 prisma/*.db.*
 
+# 迁移前的库备份目录（2026-10-05 加）。
+# 上面的 prisma/*.db.* 只匹配 prisma 一级目录，**不会**覆盖 prisma/_backup/ 下的文件
+# （gitignore 的 * 不跨 / ），所以这里必须单独忽略，否则整库会随提交进入仓库。
+prisma/_backup/
+
 # 本地/线上运行时密钥配置（三级优先级第 2 级），仓库只提交 runtime.example.json
 config/runtime.json

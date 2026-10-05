@@ -259,3 +259,16 @@ model RefreshToken {
 
   @@index([userId])
 }
+
+// 平台级单例配置（2026-10-05 新增，对应权威版方案的方案 B1）。
+// 全库仅一行，id 固定为 'platform'，由代码显式写入，故不设列默认值。
+// 为什么不复用 Tenant.settings：
+//   WorkBuddy 发布平台只注入 PORT，没有环境变量/密钥注入入口；而大模型配置
+//   是全站唯一一份（平台级），放在租户表里会被租户级接口越权改写。
+// settings 与 Tenant.settings 同策略：SQLite 无 Json 类型，以 JSON 文本存取，
+// 序列化边界统一收口到 src/common/json.ts。
+model SystemConfig {
+  id        String   @id
+  settings  String?
+  updatedAt DateTime @updatedAt @default(now())
+}

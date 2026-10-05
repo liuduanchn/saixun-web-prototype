@@ -28,7 +28,9 @@ export interface AiRuntimeConfig {
 }
 
 const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_AI_MODEL = 'gpt-4o-mini';
+// 注意：**不再提供默认模型名**（2026-10-05 决策②）。
+// 原默认值 gpt-4o-mini 会让「未配置」状态在界面上显示成一个并不生效的模型名，
+// 误导使用者以为 AI 已就绪。现在模型为空即视为未配置，由调用方走启发式。
 const logger = new Logger('RuntimeConfig');
 
 /** 允许从配置文件读取的键（白名单，避免把任意文件内容注入进程配置） */
@@ -86,7 +88,8 @@ export function aiConfig(): AiRuntimeConfig {
   return {
     baseUrl: (pick('AI_BASE_URL') || DEFAULT_AI_BASE_URL).replace(/\/$/, ''),
     apiKey: pick('AI_API_KEY'),
-    model: pick('AI_MODEL') || DEFAULT_AI_MODEL,
+    // 不回落默认模型：未显式配置就是空串（见上方说明）
+    model: pick('AI_MODEL'),
   };
 }
 

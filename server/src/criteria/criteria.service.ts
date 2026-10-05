@@ -121,7 +121,12 @@ export class CriteriaService {
       },
       { role: 'user', content: `赛项规程/评分标准文本：\n${text}` },
     ];
-    const raw = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 2500 });
+    const raw = await this.ai.chat(messages, {
+      temperature: 0.3,
+      maxTokens: 2500,
+      // feature 固定为模块对应的标识：决定分功能模型覆盖与功能开关
+      feature: 'criteria',
+    });
     const json = extractJson<CriterionDraft[]>(raw);
     if (!Array.isArray(json) || json.length === 0) throw new Error('AI 未返回有效结构');
     return json.map((c) => ({

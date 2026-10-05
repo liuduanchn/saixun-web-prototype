@@ -148,7 +148,11 @@ export class DiagnosisService {
           caseBlock,
       },
     ];
-    const raw = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 4000 });
+    const raw = await this.ai.chat(messages, {
+      temperature: 0.2,
+      maxTokens: 4000,
+      feature: 'diagnosis',
+    });
     const json = this.extractJsonArray(raw);
     return json.map((item: Record<string, unknown>) => ({
       index: Number(item.index ?? 0),

@@ -12,11 +12,17 @@ function maskSecretValue(value: unknown): string {
   return s.length <= 4 ? '****' : `${s.slice(0, 3)}****`;
 }
 
+/** 可修改团队级配置的角色：负责人与指导教师（学生 / 普通成员一律拒绝） */
+const TENANT_SETTINGS_ADMIN_ROLES: readonly string[] = ['OWNER', 'TEACHER'];
+
 /**
  * 下发 settings 前统一脱敏。
  * 背景：ASR 密钥存在 Tenant.settings 里，但原实现会把**明文**随 /api/tenants/me
  * 一起返回给浏览器（设置中心表单回显），与「密钥绝不暴露给前端」的约定相矛盾。
  * 现在只回显脱敏形态，并附 asrApiKeySet 布尔标记供前端判断是否已配置。
+ *
+ * 注意：大模型（LLM）的密钥**不在**这里——按权威版方案它落在平台级
+ * SystemConfig 表，读取路径由 config 模块单独收口，不走本函数。
  */
 function presentSettings(settings: Record<string, unknown>) {
   const raw = typeof settings.asrApiKey === 'string' ? settings.asrApiKey : '';
@@ -78,9 +84,24 @@ export class TenantsService {
     return { id: tenant.id, name: tenant.name };
   }
 
-  /** 更新团队级配置（JSON 合并）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName */
+  /**
+   * 更新团队级配置（JSON 合并）：如语音识别 ASR 的 asrApiKey / asrEndpoint / asrHeaderName。
+   *
+   * 权限（2026-10-05 补）：原实现只挂了 JwtAuthGuard，服务层**没有任何角色判断**，
+   * 任何成员（含学生）都能改团队级集成配置。实测学生账号可读本租户 settings，
+   * 写权限同源判定为同样开放，因此在放密钥前必须先收紧。
+   * 判定用 membership.role（成员在本租户内的角色），**不用** user.role ——
+   * 后者是账号级角色，多租户下两者会不一致。
+   */
   async updateSettings(settings: Record<string, unknown>, user: JwtPayload) {
     if (!settings || typeof settings !== 'object') throw new BadRequestException('配置格式不正确');
+
+    const membership = await this.users.getMembership(user.tenantId, user.sub);
+    const role = (membership?.role as string | undefined) ?? (user.role as string | undefined) ?? '';
+    if (!TENANT_SETTINGS_ADMIN_ROLES.includes(role)) {
+      throw new ForbiddenException('仅团队负责人或指导教师可修改团队集成配置');
+    }
+
     const current = parseJson<Record<string, unknown>>(
       (await this.prisma.tenant.findUnique({ where: { id: user.tenantId } }))?.settings,
       {},
