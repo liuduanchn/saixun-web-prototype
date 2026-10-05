@@ -10,6 +10,7 @@ import {
   markNotificationRead, resolveNotificationTarget, resolvePage, saveSession,
 } from "./appState.js";
 import { LoginScreen } from "./LoginScreen.jsx";
+import { BrandLogo } from "./BrandLogo.jsx";
 import { WorkspacePage } from "./pages.jsx";
 import { getSidebarPresentation } from "./sidebarState.js";
 import { api, DEMO_MODE, PROJECT_ID, setTokens } from "./api.js";
@@ -359,7 +360,10 @@ export function App() {
     <div className={sidebarPresentation.shellClassName}>
       <aside className="sidebar" aria-label="主导航">
         <div className="brand-row">
-          <div><strong>赛训智舱</strong><span>AI 备赛教练</span></div>
+          <div className="brand-id">
+            <BrandLogo size={38} />
+            <div className="brand-text"><strong>赛训智舱</strong><span>让备赛有标准</span></div>
+          </div>
           <AppIconButton label={sidebarPresentation.toggleLabel} title={sidebarPresentation.toggleLabel} aria-pressed={sidebarPresentation.togglePressed} onClick={toggleSidebar}><ListChecks size={22} /></AppIconButton>
         </div>
         <nav className="nav-list">

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Eye, EyeSlash, LockKey, SignIn, Sparkle, User } from "@phosphor-icons/react";
+import { Eye, EyeSlash, LockKey, SignIn, User } from "@phosphor-icons/react";
 import { api, DEMO_MODE } from "./api.js";
 import { saveSession, loginWithStorage } from "./appState.js";
+import { BrandLogo } from "./BrandLogo.jsx";
 
 export function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("teacher");
@@ -48,9 +49,11 @@ export function LoginScreen({ onLogin }) {
   return (
     <main className="login-screen">
       <section className="login-story" aria-label="赛训智舱产品介绍">
-        <div className="login-brand"><span><Sparkle size={24} weight="fill" /></span><strong>赛训智舱</strong><small>AI 备赛教练</small></div>
+        {/* 登录页底色本身就是深蓝，无需 logo 自带的深紫容器；去掉容器让图形撑满 42px 格，
+            否则容器会把可见图形缩到约 22px，环在深底上偏弱。 */}
+        <div className="login-brand"><span><BrandLogo size={42} plate={false} /></span><strong>赛训智舱</strong><small>让备赛有标准，让答辩有底气</small></div>
         <div className="login-story-copy">
-          <span className="login-eyebrow">教学智能体 · 竞赛训练场景</span>
+          <span className="login-eyebrow">岗课赛证融通智能体 · 竞赛训练场景</span>
           <h1>从赛项理解到赛后复盘，<br />让每一步训练都有依据。</h1>
           <p>围绕评分标准组织任务、诊断作品证据并开展模拟答辩，为教师和学生提供可追踪的备赛闭环。</p>
         </div>

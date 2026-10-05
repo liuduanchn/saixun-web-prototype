@@ -9,6 +9,9 @@
   --page: #03132b; --surface: #071d3c; --line: #1d426d; --line-bright: #176dca;
   --text: #f4f8ff; --muted: #9eb2ce; --blue: #1683ff; --blue-strong: #0870e8;
   --green: #67db75; --orange: #ff9e2c; --red: #ff5f56; --sidebar: 224px;
+  /* 品牌色（源：LogoC_闭环驱动_同源深色.svg）。
+     品红只用于「当前 / 闭环」类指示，不替换主蓝——深海军蓝 + 电蓝是职教身份主色。 */
+  --brand-magenta: #EE4C86; --brand-plate: #1B1035;
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; background: var(--page); -webkit-font-smoothing: antialiased; }
@@ -381,3 +384,45 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
 .ai-loading-note i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 999px; background: var(--blue); animation: aiPulse 1.1s ease-in-out infinite; }
 @keyframes aiPulse { 0%, 100% { opacity: .3; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .ai-loading-note i { animation: none; opacity: .8; } }
+
+
+/* ===== 品牌标识「闭环驱动」融入（2026-10-05） =====
+   统一收口在文件末尾，便于日后整体调整；同选择器时后者生效，故可安全覆盖上方既有规则。 */
+
+/* 侧边栏品牌区：logo + 文字并排；折叠态只留 logo */
+.brand-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-text { min-width: 0; }
+.brand-logo { flex: none; }
+.sidebar-collapsed .brand-row .brand-text { display: none; }
+.sidebar-collapsed .brand-id { justify-content: center; }
+
+/* 登录页品牌区：外层的蓝色方chip去掉，改由 logo 自带的深紫容器承担，
+   否则会出现「蓝底chip里套深紫底」的双层容器。 */
+.login-brand > span { background: transparent; border: 0; box-shadow: none; }
+
+/* 品牌品红落点（三处，只用于「当前 / 闭环」语义，不替换主蓝） */
+
+/* 1) 侧边栏当前页：在图标左侧加一条品牌色指示条，底色仍保持蓝色身份 */
+.nav-item { position: relative; }
+.nav-item.active::before {
+  content: ""; position: absolute; left: 0; top: 11px; bottom: 11px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--brand-magenta);
+}
+
+/* 2) 阶段条当前阶段：六阶段里唯一被点亮的那一格 */
+.stage-compact span.active i {
+  background: var(--brand-magenta); border-color: #F4A9C6;
+  box-shadow: 0 0 16px rgba(238,76,134,.42);
+}
+
+/* 3) 通知列表的未读小圆点（右上角数量徽标保持红色——那是「数量告急」语义，不作品牌化） */
+.unread::before { background: var(--brand-magenta); }
+
+/* 2b) 驾驶舱阶段带（.stage-track）的当前阶段 —— 这是「闭环驱动」最贴切的品牌位。
+   与蓝色版保持同样的视觉重量（深底 + 亮边 + 辉光），只换色相：
+   深品红底 + 浅粉字（约 6.9:1），避免用亮品红填充配白字（那样只有 3.5:1，不达标）。 */
+.stage-track .stage.active .stage-number {
+  border-color: #F4A9C6; background: #8E2352; color: #FFE3EE;
+  box-shadow: 0 0 20px rgba(238,76,134,.45);
+}
+.stage-track .stage.active .stage-state { border-color: #F4A9C6; background: var(--brand-magenta); }
