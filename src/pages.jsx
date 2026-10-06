@@ -1735,11 +1735,13 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       ))}
 
       {llmTest && <p className="muted small">{llmTest.ok ? `连接成功：${llmTest.latencyMs}ms · 模型 ${llmTest.model} · 返回 ${JSON.stringify(llmTest.message)}` : `连接失败：${llmTest.message}`}</p>}
-      <div className="inline-field">
-        <button className="page-primary" onClick={testLlm} disabled={llmTesting || !llmReadyToTest}>{llmTesting ? "测试中…" : "测试连接"}</button>
-        <button className="page-primary save-settings" onClick={saveLlm} disabled={llmSaving}>{llmSaving ? "保存中…" : "保存大模型配置"}</button>
-      </div>
       {!llmReadyToTest && <p className="muted small">测试连接需先填齐「接口地址 / API Key / 模型名称」；测试用的是<strong>已保存</strong>的配置。</p>}
+      {/* 按钮不要放进 .inline-field：那是 display:grid，会忽略 .save-settings 的 float:right，
+          并把第一个按钮按 1fr 列拉伸，导致两个按钮宽度不一致、整体变形。 */}
+      <div className="settings-actions">
+        <button className="page-primary" onClick={testLlm} disabled={llmTesting || !llmReadyToTest}>{llmTesting ? "测试中…" : "测试连接"}</button>
+        <button className="page-primary" onClick={saveLlm} disabled={llmSaving}>{llmSaving ? "保存中…" : "保存大模型配置"}</button>
+      </div>
     </section>}
   </div></section>;
 }

@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig(({ mode }) => {
   // 用 loadEnv 读取 .env / .env.<mode> 文件。
@@ -17,6 +18,16 @@ export default defineConfig(({ mode }) => {
     base,
     build: {
       outDir: "dist/client",
+      // 多页入口：index.html 是应用本体，landing.html 是新版落地页
+      //（从经典登录页右上角「新版入口」进入，登录复用 src/loginFlow.js）。
+      // 显式声明两个入口后，产物仍是 dist/client/index.html 与 dist/client/landing.html，
+      // Sites 交付所依赖的 dist/client/index.html 位置不变。
+      rollupOptions: {
+        input: {
+          main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          landing: fileURLToPath(new URL("./landing.html", import.meta.url)),
+        },
+      },
     },
     optimizeDeps: {
       include: ["react", "react-dom/client"],

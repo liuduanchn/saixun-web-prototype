@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { Eye, EyeSlash, LockKey, SignIn, User } from "@phosphor-icons/react";
-import { api, DEMO_MODE } from "./api.js";
-import { saveSession, loginWithStorage } from "./appState.js";
+import { ArrowUpRight, Eye, EyeSlash, LockKey, SignIn, User } from "@phosphor-icons/react";
+import { DEMO_MODE } from "./api.js";
+import { performLogin } from "./loginFlow.js";
 import { BrandLogo } from "./BrandLogo.jsx";
+
+// 新版落地页是多页入口（vite.config.js 的第二个 HTML 入口），随 base 变化。
+const LANDING_HREF = `${import.meta.env.BASE_URL}landing.html`;
 
 export function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("teacher");
@@ -13,41 +16,25 @@ export function LoginScreen({ onLogin }) {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError("");
-    try {
-      let user;
-      if (DEMO_MODE) {
-        // 演示模式（未配置 VITE_API_BASE，无后端可用）：走本地 SHA-256 比对，
-        // 期望哈希由构建期注入 VITE_DEMO_PASSWORD_HASH。
-        const result = await loginWithStorage(
-          window.localStorage,
-          username,
-          password,
-          import.meta.env.VITE_DEMO_PASSWORD_HASH,
-        );
-        if (!result.ok) {
-          setError(result.error);
-          return;
-        }
-        user = result.user;
-      } else {
-        user = await api.auth.login(username, password);
-        if (!saveSession(window.localStorage, user)) {
-          setError("无法保存登录状态，请检查浏览器存储权限");
-          return;
-        }
-      }
-      onLogin(user);
-    } catch (err) {
-      setError(err?.message || "登录失败，请重试");
-    } finally {
-      setSubmitting(false);
+    // 登录逻辑与新版落地页共用同一份实现（src/loginFlow.js）
+    const result = await performLogin(username, password);
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    onLogin(result.user);
   };
 
   return (
     <main className="login-screen">
+      <a className="login-newentry" href={LANDING_HREF}>
+        <ArrowUpRight size={17} weight="bold" />新版入口
+      </a>
+
       <section className="login-story" aria-label="赛训智舱产品介绍">
         {/* 登录页底色本身就是深蓝，无需 logo 自带的深紫容器；去掉容器让图形撑满 42px 格，
             否则容器会把可见图形缩到约 22px，环在深底上偏弱。 */}
