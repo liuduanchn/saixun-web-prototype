@@ -5,6 +5,7 @@ import { toJson } from '../src/common/json';
 import * as bcrypt from 'bcryptjs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { backfillResourceFiles, writeResourceDoc } from './resource-docs';
 
 const prisma = new PrismaClient();
 
@@ -274,9 +275,24 @@ async function seedResources(projectId: string, projectName: string) {
     },
   ];
   for (const t of templates) {
-    await prisma.resource.create({
+    const row = await prisma.resource.create({
       data: { projectId, type: t.type, name: t.name, description: t.description },
     });
+    // 同时生成可下载文档并写入 fileRef，避免示例资源「有名无文件」
+    const owner = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { tenantId: true },
+    });
+    if (owner?.tenantId) {
+      const fileRef = await writeResourceDoc(
+        owner.tenantId,
+        row.id,
+        t.type,
+        projectName,
+        t.description,
+      );
+      await prisma.resource.update({ where: { id: row.id }, data: { fileRef } });
+    }
   }
 }
 
@@ -813,37 +829,37 @@ async function main() {
   // 8.1 指导教师（3 名，均归属信息工程学院，密码 123456）
   const teacher3 = await prisma.user.upsert({
     where: { tenantId_username: { username: 'teacher3', tenantId: infoTenant.id } },
-    update: { name: '王敏' },
+    update: { name: '王老师' },
     create: {
       tenantId: infoTenant.id,
       activeTenantId: infoTenant.id,
       username: 'teacher3',
       passwordHash,
-      name: '王敏',
+      name: '王老师',
       role: 'TEACHER',
     },
   });
   const teacher4 = await prisma.user.upsert({
     where: { tenantId_username: { username: 'teacher4', tenantId: infoTenant.id } },
-    update: { name: '孙磊' },
+    update: { name: '孙老师' },
     create: {
       tenantId: infoTenant.id,
       activeTenantId: infoTenant.id,
       username: 'teacher4',
       passwordHash,
-      name: '孙磊',
+      name: '孙老师',
       role: 'TEACHER',
     },
   });
   const teacher5 = await prisma.user.upsert({
     where: { tenantId_username: { username: 'teacher5', tenantId: infoTenant.id } },
-    update: { name: '周婷' },
+    update: { name: '周老师' },
     create: {
       tenantId: infoTenant.id,
       activeTenantId: infoTenant.id,
       username: 'teacher5',
       passwordHash,
-      name: '周婷',
+      name: '周老师',
       role: 'TEACHER',
     },
   });
@@ -1116,6 +1132,15 @@ async function main() {
   for (const s of studentList) {
     await seedStudentEvents(s.student.id, s.projectName, s.isUploader);
     await seedStudentNotifications(s.student.id, s.projectName, s.isUploader);
+  }
+
+  // 补生成资源附件（幂等）：示例资源原先没有 fileRef，前端点开没有文件可下载。
+  // 放在末尾兼顾两种情况 —— 新库由 seedResources 直接带附件，历史库（含线上已建好的库）
+  // 靠这一步补齐，重跑 seed 即可修复。
+  const filled = await backfillResourceFiles(prisma);
+  if (filled > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[seed] 已为 ${filled} 条资源补生成可下载文档（uploads/）`);
   }
 
   // eslint-disable-next-line no-console

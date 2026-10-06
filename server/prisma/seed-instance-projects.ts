@@ -24,6 +24,7 @@ import * as bcrypt from 'bcryptjs';
 import { mkdir, writeFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { INSTANCE_PROJECTS, ProjectSeed, DiagSeed, MemberSeed } from './instance-project-data';
+import { writeResourceDoc } from './resource-docs';
 import {
   PROJECT_PROFILES,
   ProjectProfile,
@@ -368,7 +369,7 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
       where: { projectId: p.projectId, name: r.name },
     });
     if (found) continue;
-    await prisma.resource.create({
+    const row = await prisma.resource.create({
       data: {
         projectId: p.projectId,
         type: r.type,
@@ -377,6 +378,16 @@ async function seedProject(p: ProjectSeed, profile: ProjectProfile, passwordHash
         createdAt: ago(35),
       },
     });
+    // 同步生成可下载文档（fileRef），否则资源知识库里点下载是禁用态。
+    // 注意只写本脚本自己作用域内的项目（tenantId 取自 p），不越界到其他赛项。
+    const fileRef = await writeResourceDoc(
+      p.tenantId,
+      row.id,
+      r.type,
+      p.projectName ?? r.name,
+      r.description,
+    );
+    await prisma.resource.update({ where: { id: row.id }, data: { fileRef } });
     rCreated += 1;
   }
   bump('created', '资源', rCreated);

@@ -447,3 +447,52 @@ export const api = {
     },
   },
 };
+
+/**
+ * 下载文件：带鉴权头取 blob，再触发浏览器保存。
+ * ------------------------------------------------------------------
+ * 为什么不能直接用 <a href={url} download>：
+ *   后端 `GET /api/files/*`（storage.controller）要求请求头携带 X-Saixun-Auth，
+ *   并校验「路径必须落在当前用户租户目录内」；而浏览器对 <a> 跳转/新标签页
+ *   **不会**附加自定义请求头，直接点必定 401。因此改为 fetch 取 blob。
+ * 顺带修掉一个既有缺陷：资源名称原先也是 <a href>，同样点不开。
+ *
+ * @param {string} url      服务端返回的 origin 绝对地址（/api/files/<tenant>/<file>）
+ * @param {string} fileName 保存文件名（含扩展名）
+ */
+export async function downloadFile(url, fileName = "download") {
+  const token = getToken();
+  const headers = token ? { "X-Saixun-Auth": token, Authorization: `Bearer ${token}` } : {};
+
+  let res;
+  try {
+    res = await fetch(url, { headers });
+  } catch {
+    throw new ApiError("无法连接服务器，下载失败", 0);
+  }
+
+  // access_token 过期：续期一次后重试（与 request() 的策略保持一致）
+  if (res.status === 401) {
+    try {
+      const fresh = await doRefresh();
+      res = await fetch(url, { headers: { "X-Saixun-Auth": fresh, Authorization: `Bearer ${fresh}` } });
+    } catch {
+      clearTokens();
+      throw new ApiError("登录已失效，请重新登录", 401);
+    }
+  }
+
+  if (!res.ok) throw new ApiError(`下载失败（${res.status}）`, res.status);
+
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = fileName || "download";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // 立即 revoke 在部分浏览器会中断下载，延后释放
+  setTimeout(() => URL.revokeObjectURL(href), 4000);
+  return true;
+}

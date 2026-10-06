@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, BookOpenText, Brain, Buildings, CalendarBlank, ChartBar, Check, CheckCircle,
-  ClipboardText, Clock, CloudArrowUp, Cube, FileDoc, FilePdf, FileXls, Flag,
+  ClipboardText, Clock, CloudArrowUp, Cube, DownloadSimple, FileDoc, FilePdf, FileXls, Flag,
   FolderOpen, GearSix, GraduationCap, Lightbulb, MagnifyingGlass, Medal,
   MonitorPlay, PaperPlaneTilt, Plus, PresentationChart, SealCheck, ShieldCheck,
   Sparkle, Student, Target, TrendUp, Trash, UserCircle, UsersThree, WarningCircle, X, Microphone, PencilSimple,
 } from "@phosphor-icons/react";
 import { StudentTasksPage, StudentWorksPage, StudentDiagnosisPage, StudentDefensePage } from "./studentPages.jsx";
-import { api, DEMO_MODE } from "./api.js";
+import { api, DEMO_MODE, downloadFile } from "./api.js";
 import { recordingToWav } from "./audio.js";
 import { normalizeTask, buildColumns } from "./taskModel.js";
 import { formatDateTime, stageIndex, unwrapList } from "./shape.js";
@@ -1207,6 +1207,19 @@ function ResourcesPage({ projectId, onToast }) {
     }
   };
 
+  // 下载资源附件：必须走带鉴权头的 fetch（/api/files/* 要求 X-Saixun-Auth 且按租户校验，
+  // 浏览器直接跳 <a href> 不会带自定义头，必然 401）。
+  const onDownload = async (item) => {
+    if (DEMO_MODE || !item.url) return;
+    const ext = (String(item.url).match(/\.[A-Za-z0-9]{1,5}$/) || [".md"])[0];
+    try {
+      await downloadFile(item.url, `${item.name}${ext}`);
+      onToast(`已开始下载：${item.name}`);
+    } catch (err) {
+      onToast(err?.message || "下载失败");
+    }
+  };
+
   const onDelete = async (id) => {
     if (DEMO_MODE) return;
     try {
@@ -1217,7 +1230,7 @@ function ResourcesPage({ projectId, onToast }) {
     }
   };
 
-  return <section className="module-page"><PageIntro icon={FolderOpen} title="资源知识库" description="集中管理赛项材料、训练模板、诊断案例与答辩资源。" action={<label className="page-primary upload-button">{uploading ? "上传中…" : <><CloudArrowUp size={19} />上传资源</>}<input type="file" hidden onChange={onUpload} /></label>} /><section className="module-panel resource-panel"><div className="resource-toolbar"><div className="search-field"><MagnifyingGlass size={19} /><input aria-label="搜索资源" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资源名称、类型或说明" /></div><StatusTag>{filtered.length} 项资源</StatusTag></div>{loading && <p className="empty-state">正在加载资源…</p>}{error && <p className="empty-state">{error}</p>}<div className="resource-table"><div className="resource-head"><span>资源名称</span><span>类型</span><span>说明</span><span>更新时间</span><span /></div>{filtered.map((item) => <div key={item.id} className="resource-row"><span><FileDoc size={24} />{item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="resource-link">{item.name}</a> : item.name}</span><StatusTag tone={item.type === "CASE" ? "green" : "blue"}>{RESOURCE_TYPE_LABEL[item.type] ?? item.type}</StatusTag><span>{item.description || "—"}</span><span>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</span><button className="resource-delete" aria-label="删除资源" onClick={() => onDelete(item.id)}><Trash size={17} /></button></div>)}</div>{!loading && filtered.length === 0 && <p className="empty-state">暂无资源，点击右上角上传第一个资源。</p>}</section></section>;
+  return <section className="module-page"><PageIntro icon={FolderOpen} title="资源知识库" description="集中管理赛项材料、训练模板、诊断案例与答辩资源。" action={<label className="page-primary upload-button">{uploading ? "上传中…" : <><CloudArrowUp size={19} />上传资源</>}<input type="file" hidden onChange={onUpload} /></label>} /><section className="module-panel resource-panel"><div className="resource-toolbar"><div className="search-field"><MagnifyingGlass size={19} /><input aria-label="搜索资源" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资源名称、类型或说明" /></div><StatusTag>{filtered.length} 项资源</StatusTag></div>{loading && <p className="empty-state">正在加载资源…</p>}{error && <p className="empty-state">{error}</p>}<div className="resource-table"><div className="resource-head"><span>资源名称</span><span>类型</span><span>说明</span><span /><span>更新时间</span><span /></div>{filtered.map((item) => <div key={item.id} className="resource-row"><span><FileDoc size={24} />{item.url ? <button type="button" className="resource-link" onClick={() => onDownload(item)}>{item.name}</button> : item.name}</span><StatusTag tone={item.type === "CASE" ? "green" : "blue"}>{RESOURCE_TYPE_LABEL[item.type] ?? item.type}</StatusTag><span>{item.description || "—"}</span><button className="resource-download" disabled={!item.url} onClick={() => onDownload(item)} aria-label={`下载 ${item.name}`} title={item.url ? "下载" : "该资源暂无可下载文件"}><DownloadSimple size={17} /></button><span>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</span><button className="resource-delete" aria-label="删除资源" onClick={() => onDelete(item.id)}><Trash size={17} /></button></div>)}</div>{!loading && filtered.length === 0 && <p className="empty-state">暂无资源，点击右上角上传第一个资源。</p>}</section></section>;
 }
 
 const LEARNING_ICONS = {
@@ -1638,6 +1651,7 @@ function SettingsPage({ user, activeTenantId, onToast, onTeamUpdate, onSwitchTen
       <p className="muted small">创建后你作为负责人（OWNER）加入，并自动切换为当前团队。成员可用"添加成员"通过已注册用户名加入。</p>
       <label className="field-row"><span>团队名称</span><div className="inline-field"><input value={teamName} onChange={(event) => setTeamName(event.target.value)} aria-label="团队名称" /><button className="page-primary" onClick={saveTeamName}>保存</button></div></label>
       <h3>团队成员（{members.length}）</h3>
+      <p className="muted small">学生姓名均为化名</p>
       <div className="member-list">{members.map((m) => {
         const isSelf = m.username === user?.username;
         return (

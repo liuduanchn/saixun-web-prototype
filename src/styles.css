@@ -451,3 +451,61 @@ button:focus-visible, a:focus-visible { outline: 2px solid #79baff; outline-offs
    新增大模型卡片时漏了这条，导致 p.muted 继承 16px 根字号 + p 默认 1em 下边距（16px），
    比 ASR 卡片的 11px 明显偏大。这里与 .asr-settings .muted 保持完全一致。 */
 .llm-settings .muted { color: #768ba4; font-size: 11px; line-height: 1.6; margin: 0 0 14px; }
+
+/* ===== 六项界面细节修正（2026-10-06） ===== */
+
+/* 1) 团队管理：新增的「学生姓名均为化名」说明与其他卡片字号一致。
+      全局**没有** .muted 的字号规则，各面板自声明（.asr-settings / .account-settings …），
+      这里按同一规格补上。 */
+.team-settings .muted { color: #768ba4; font-size: 11px; line-height: 1.6; margin: 0 0 10px; }
+
+/* 2) 赛项规程解析（LLM）：操作按钮改为右对齐。
+      全站的操作行都在右侧（ASR / 大模型卡片的保存、团队管理的保存），此面板原先靠左。 */
+.parse-actions { justify-content: flex-end; margin-top: 15px; }
+
+/* 3) 风险预警（训练任务中心右栏）：标题被挤成竖排 + AI 复评按钮溢出面板。
+      原因：.section-heading 是 nowrap 的 flex —— h2 被压到最小内容宽（每行一个字），
+      而 .ai-mini-btn 是 flex:0 0 auto + white-space:nowrap，既不能收缩也换不了行。
+      改法：允许换行（放不下时按钮自然落到下一行），标题保持单行，按钮可收缩且不超过面板宽。 */
+.warning-box .section-heading { flex-wrap: wrap; row-gap: 8px; }
+.warning-box .section-heading h2 { white-space: nowrap; }
+.ai-mini-btn { flex: 0 1 auto; max-width: 100%; }
+
+/* 4) 作品诊断：三列各自按内容高度自适应。
+      原先 grid 默认 align-items:stretch，左侧两卡与右侧教师复核被拉到与中间诊断列表等高，
+      于是出现大片空白。 */
+.diagnosis-grid { align-items: start; }
+
+/* 5) 诊断条目内部收紧；教师复核区不再被撑高。
+      .review-confirm 原为 flex:1 + min-height:190px，在有富余高度时会一直长。 */
+.match-score { min-height: 96px; padding: 12px 16px; }
+.diagnosis-result dl { margin: 10px 0 0; }
+.diagnosis-result dl > div { min-height: 46px; padding: 8px 12px; }
+.teacher-review .review-confirm { flex: 0 0 auto; min-height: 132px; }
+
+/* 6) 资源知识库：在「更新时间」左侧增加下载列（栅格多一列）。 */
+.resource-head, .resource-row { grid-template-columns: 1.15fr 100px 1.3fr 34px 120px 24px; }
+.resource-download { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; color: #8aa0bb; background: transparent; border: 1px solid #24517f; border-radius: 6px; cursor: pointer; }
+.resource-download:hover:not(:disabled) { color: #fff; background: #0d315d; border-color: var(--blue); }
+.resource-download:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 窄屏下资源行的列需要跟着第 6 项一起调整：
+   子元素顺序变为 名称(1) / 类型(2) / 说明(3) / 下载(4) / 更新时间(5) / 删除(6)，
+   手机端隐藏说明与更新时间，保留 名称 / 类型 / 下载 / 删除。 */
+@media (max-width: 1180px) {
+  .resource-row { grid-template-columns: 1fr auto 26px 20px; }
+  .resource-row > span:nth-child(3), .resource-row > span:nth-child(5) { display: none; }
+}
+
+/* ===== 赛项规程解析（LLM）面板：输入框/按钮与边框贴边（2026-10-06） =====
+   根因：全局 .module-panel **只声明背景/边框/圆角，不声明 padding** —— padding 由各面板
+   自己的作用域规则提供（.documents-panel/.criteria-panel/.confirm-panel 是 `0 12px 12px`，
+   .settings-layout 那组是 17px，.diagnosis-* 是 16px …）。.parse-panel 从未声明过，
+   实测 computed padding = 0px，于是标题、输入框、按钮全部贴着面板边框
+   （实测：按钮底边 518 / 面板底边 519，仅差 1px）。
+   改法：与同页的 criteria-panel / confirm-panel 采用完全一致的 `0 12px 12px`。 */
+.parse-panel { padding: 0 12px 12px; }
+
+/* 资源名称改为按钮（原先是 <a href>，因 /api/files/* 需要鉴权头而必然 401）：
+   补上按钮复位样式，保持与原链接一致的外观。 */
+button.resource-link { padding: 0; background: transparent; border: 0; cursor: pointer; font: inherit; text-align: left; }
