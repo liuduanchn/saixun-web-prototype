@@ -187,7 +187,7 @@ cd /tmp/selftest && node scripts/workbuddy-install.mjs && PORT=17100 node script
 # 关键检查点
 curl -s  http://127.0.0.1:17100/api/health          # {"status":"ok","db":"up"}
 curl -sI http://127.0.0.1:17100/api/nope            # 必须 404，不能是 200 HTML
-curl -s  http://127.0.0.1:17100/some/deep/route     # 必须返回 index.html
+curl -s  http://127.0.0.1:17100/some/deep/route     # 必须返回 app.html（应用壳）
 ```
 
 本地跑 `workbuddy:start` 时若 `npm run build` 被本机 safe-delete 钩子拦截，

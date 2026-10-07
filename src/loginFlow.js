@@ -2,7 +2,8 @@ import { api, DEMO_MODE } from "./api.js";
 import { saveSession, loginWithStorage } from "./appState.js";
 
 /**
- * 统一的登录入口 —— 经典登录页（LoginScreen）与新版落地页（landing.html）共用同一份逻辑。
+ * 统一的登录入口 —— 应用壳里的经典登录页（LoginScreen，app.html）与
+ * 网站首页的新版落地页（index.html）共用同一份逻辑。
  *
  * - 演示模式（未配置 VITE_API_BASE，没有后端可用）：走本地 SHA-256 比对，
  *   期望哈希由构建期注入 VITE_DEMO_PASSWORD_HASH。

@@ -63,7 +63,7 @@
 
 赛训智舱面向职业技能竞赛中的指导教师与学生团队，聚焦赛项材料复杂、评分点难拆解、团队任务与评价标准脱节、作品修改缺少证据依据、答辩训练随机性强等真实问题，构建覆盖「赛项理解—方案设计—原型开发—作品打磨—模拟答辩—赛后复盘」的智能备赛闭环。
 
-当前仓库为**前后端一体的可运行系统**（非静态原型），内置 9 个团队、11 个赛项项目的差异化演示数据，重点展示三个核心价值：
+当前仓库为**前后端一体的可运行系统**（非静态原型），内置 9 个团队、11 个赛项项目的差异化演示数据。网站首页 `index.html` 为新版落地页并内置登录表单，经典登录页与工作台位于 `app.html`，两者可互相跳转；旧的 `/landing.html` 会自动重定向到首页。重点展示三个核心价值：
 
 - 将赛项规程和评分标准转化为结构化能力点与备赛路线；
 - 将团队任务、作品材料与评分点绑定，使训练过程可追踪、可审核；
@@ -198,7 +198,8 @@ npx nest build && node dist/main
 # 3. 另开终端启动前端（:17200），并把代理目标同步到后端端口
 cd ..
 VITE_PROXY_TARGET=http://127.0.0.1:17100 npx vite --port 17200
-# 访问 http://127.0.0.1:17200/saixun-web-prototype/
+# 网站首页（新版落地页）：http://127.0.0.1:17200/saixun-web-prototype/
+# 应用入口（经典登录 + 工作台）：http://127.0.0.1:17200/saixun-web-prototype/app.html
 ```
 
 > ⚠️ **Vite 的 `base` 默认为 `/saixun-web-prototype/`**（GitHub Pages 子路径部署），
@@ -258,9 +259,12 @@ saixun-web-prototype/
 │  ├─ src/config/            # AI 三级配置与状态接口
 │  └─ prisma/                # schema 与种子脚本
 ├─ tests/                    # Node 测试
-├─ worker/index.js           # 静态站点 SPA 回退 Worker
+├─ worker/index.js           # 静态站点 SPA 回退 Worker（回退到 app.html）
+├─ index.html                # 网站首页：新版落地页（含登录表单）
+├─ app.html                  # 应用壳：经典登录页 + 驾驶舱工作台
+├─ landing.html              # 旧落地页地址，自动重定向到首页
 ├─ package.json
-└─ vite.config.mjs
+└─ vite.config.mjs           # 多页入口：index.html / app.html / landing.html
 ```
 
 ## 部署说明
@@ -270,7 +274,7 @@ saixun-web-prototype/
 
 | 目标 | 说明 |
 | --- | --- |
-| **WorkBuddy 托管**（当前 `main`） | 入口 `https://saixun-cabin.app.workbuddy.host/`，执行 `npm run workbuddy:install` + `npm run workbuddy:start`，详见 [WORKBUDDY_DEPLOY.md](WORKBUDDY_DEPLOY.md) |
+| **WorkBuddy 托管**（当前 `main`） | 首页 `https://saixun-cabin.app.workbuddy.host/`（落地页），应用入口为 `/app.html`；执行 `npm run workbuddy:install` + `npm run workbuddy:start`，详见 [WORKBUDDY_DEPLOY.md](WORKBUDDY_DEPLOY.md) |
 | GitHub Pages | `base` 为 `/saixun-web-prototype/`；CI 需 `DATABASE_URL` 为 SQLite 路径才能构建，详见 [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 > **数据层历史说明**：本项目早期 `main` 使用 PostgreSQL + Railway/GitHub Pages 链路，
@@ -288,4 +292,4 @@ saixun-web-prototype/
 
 ## 许可说明
 
-本项目目前未声明开源许可证。未经许可，请勿将代码用于商业用途。
+本项目采用 [MIT 许可证](LICENSE)。可自由使用、修改与分发，请保留版权与许可声明。

@@ -16,8 +16,10 @@ async function bootstrap() {
   const clientDir = process.env.CLIENT_DIR
     ? resolve(process.env.CLIENT_DIR)
     : resolve(__dirname, '..', '..', 'dist', 'client');
-  const indexHtml = join(clientDir, 'index.html');
-  const hasClient = existsSync(indexHtml);
+  // SPA 回退目标是应用壳 app.html —— index.html 现为网站落地页，
+  // 若仍回退到它，任何深链接都会被送去落地页而不是应用。
+  const appHtml = join(clientDir, 'app.html');
+  const hasClient = existsSync(appHtml);
 
   // ── 安全头 ────────────────────────────────────────────────────────────
   // 与「纯 JSON API」时期不同：现在同一个进程还要托管前端 HTML，
@@ -76,7 +78,7 @@ async function bootstrap() {
     if (/\.[a-zA-Z0-9]+$/.test(reqPath)) return next();
     res.setHeader('Cache-Control', 'no-cache');
     if (req.method === 'HEAD') return res.status(200).end();
-    return res.sendFile(indexHtml);
+    return res.sendFile(appHtml);
   });
 
   // ── CORS ──────────────────────────────────────────────────────────────

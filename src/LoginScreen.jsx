@@ -4,8 +4,8 @@ import { DEMO_MODE } from "./api.js";
 import { performLogin } from "./loginFlow.js";
 import { BrandLogo } from "./BrandLogo.jsx";
 
-// 新版落地页是多页入口（vite.config.js 的第二个 HTML 入口），随 base 变化。
-const LANDING_HREF = `${import.meta.env.BASE_URL}landing.html`;
+// 新版落地页现为网站首页（index.html），随部署 base 变化；应用壳在 app.html。
+const LANDING_HREF = import.meta.env.BASE_URL;
 
 export function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("teacher");
@@ -32,7 +32,7 @@ export function LoginScreen({ onLogin }) {
   return (
     <main className="login-screen">
       <a className="login-newentry" href={LANDING_HREF}>
-        <ArrowUpRight size={17} weight="bold" />新版入口
+        <ArrowUpRight size={17} weight="bold" />返回首页
       </a>
 
       <section className="login-story" aria-label="赛训智舱产品介绍">

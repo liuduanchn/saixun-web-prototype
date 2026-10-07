@@ -279,9 +279,10 @@ import { performLogin } from "./loginFlow.js";
   var errBox = document.getElementById("loginErr");
   var submitBtn = document.getElementById("loginSubmit");
   var backLink = document.getElementById("backClassic");
-  var appHref = import.meta.env.BASE_URL;
+  // 应用壳入口（app.html）：落地页现为网站首页（index.html），
+  // 登录成功后与「经典登录入口」都跳到应用壳，随部署 base 变化。
+  var appHref = import.meta.env.BASE_URL + "app.html";
 
-  // 「返回经典登录」指向应用入口（index.html），随部署 base 变化
   if (backLink) backLink.href = appHref;
 
   form.addEventListener("submit", async function (event) {

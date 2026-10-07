@@ -18,13 +18,14 @@ export default defineConfig(({ mode }) => {
     base,
     build: {
       outDir: "dist/client",
-      // 多页入口：index.html 是应用本体，landing.html 是新版落地页
-      //（从经典登录页右上角「新版入口」进入，登录复用 src/loginFlow.js）。
-      // 显式声明两个入口后，产物仍是 dist/client/index.html 与 dist/client/landing.html，
-      // Sites 交付所依赖的 dist/client/index.html 位置不变。
+      // 多页入口：index.html 是新版落地页（网站默认首页），app.html 是应用本体
+      //（从落地页「经典登录入口」或登录成功后进入），landing.html 是旧地址的重定向页。
+      // 三者都显式声明，产物为 dist/client/index.html、app.html、landing.html；
+      // Sites 交付所依赖的 dist/client/index.html 位置不变（现为落地页）。
       rollupOptions: {
         input: {
           main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          app: fileURLToPath(new URL("./app.html", import.meta.url)),
           landing: fileURLToPath(new URL("./landing.html", import.meta.url)),
         },
       },
