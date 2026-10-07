@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="410" viewBox="0 0 1200 410" role="img" aria-labelledby="archTitle archDesc">
+  <title id="archTitle">赛训智舱系统架构</title>
+  <desc id="archDesc">上排自左至右为浏览器前端（React 19 与 Vite 6）、NestJS 11 API（JWT 鉴权、多租户隔离、分页）与数据层（Prisma 6 加 SQLite 单文件库，免外部数据库服务）。下排为模型层：采用 OpenAI 兼容协议，支持 OpenAI、DeepSeek、硅基流动与通义，切换供应商只改 AI_BASE_URL 与 AI_MODEL，不改业务代码；配置优先级为环境变量、runtime.json、缺省，缺省时自动降级为确定性启发式实现。</desc>
+
+  <rect width="1200" height="410" rx="24" fill="#03132b"/>
+
+  <g id="request-path" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif">
+    <rect x="64" y="60" width="300" height="120" rx="14" fill="#071d3c" stroke="#1d426d" stroke-width="1.5"/>
+    <text x="88" y="108" font-size="24" fill="#f4f8ff">浏览器 · 前端</text>
+    <text x="88" y="144" font-size="20" fill="#9eb2ce">React 19 · Vite 6</text>
+
+    <rect x="424" y="60" width="350" height="120" rx="14" fill="#071d3c" stroke="#176dca" stroke-width="2"/>
+    <text x="448" y="108" font-size="24" fill="#f4f8ff">NestJS 11 · API</text>
+    <text x="448" y="144" font-size="20" fill="#9eb2ce">JWT 鉴权 · 多租户隔离 · 分页</text>
+
+    <rect x="834" y="60" width="302" height="120" rx="14" fill="#071d3c" stroke="#1d426d" stroke-width="1.5"/>
+    <text x="858" y="108" font-size="24" fill="#f4f8ff">数据层</text>
+    <text x="858" y="144" font-size="20" fill="#9eb2ce">Prisma 6 · SQLite</text>
+
+    <line x1="372" y1="120" x2="408" y2="120" stroke="#176dca" stroke-width="2"/>
+    <polygon points="407,114 419,120 407,126" fill="#176dca"/>
+    <line x1="782" y1="120" x2="818" y2="120" stroke="#176dca" stroke-width="2"/>
+    <polygon points="817,114 829,120 817,126" fill="#176dca"/>
+
+    <line x1="599" y1="180" x2="599" y2="210" stroke="#1d426d" stroke-width="2"/>
+    <polygon points="593,208 599,220 605,208" fill="#1d426d"/>
+  </g>
+
+  <g id="model-path" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif">
+    <rect x="424" y="222" width="712" height="152" rx="14" fill="#071d3c" stroke="#1d426d" stroke-width="1.5"/>
+    <text x="452" y="258" font-size="24" fill="#f4f8ff">模型调用 · OpenAI 兼容协议</text>
+    <text x="452" y="292" font-size="20" fill="#9eb2ce">支持 OpenAI / DeepSeek / 硅基流动 / 通义</text>
+    <text x="452" y="322" font-size="20" fill="#9eb2ce">切换供应商只改 AI_BASE_URL 与 AI_MODEL，不改业务代码</text>
+    <text x="452" y="352" font-size="20" fill="#9eb2ce">配置优先级 1 环境变量 › 2 runtime.json › 3 缺省 → 降级为启发式</text>
+  </g>
+</svg>

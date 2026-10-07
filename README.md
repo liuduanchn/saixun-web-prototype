@@ -1,22 +1,69 @@
 <div align="center">
 
-# 赛训智舱
-
-### AI 驱动的职业技能竞赛备赛岗课赛证融通智能体
-
-围绕评分标准组织任务、诊断作品证据、开展模拟答辩并沉淀赛后经验，让竞赛训练从“经验驱动”走向“标准驱动、证据驱动和持续改进”。
+<img src="docs/readme-assets/hero.svg" width="100%" alt="赛训智舱 —— AI 驱动的职业技能竞赛备赛智能体。覆盖赛项理解、方案设计、原型开发、作品打磨、模拟答辩、赛后复盘的六阶段备赛闭环。">
 
 [在线体验](https://saixun-cabin.app.workbuddy.host/) · [GitHub 仓库](https://github.com/liuduanchn/saixun-web-prototype)
 
 </div>
 
-![赛训智舱竞赛项目驾驶舱](docs/readme-assets/dashboard.png)
+## 界面速览
+
+围绕评分标准组织任务、诊断作品证据、开展模拟答辩并沉淀赛后经验，让竞赛训练从「经验驱动」走向「标准驱动、证据驱动和持续改进」。
+
+| 竞赛项目驾驶舱 | 作品诊断中心 |
+| --- | --- |
+| ![竞赛项目驾驶舱：阶段进度、评分覆盖率与本周任务](docs/readme-assets/dashboard.png) | ![作品诊断中心：对照评分标准识别证据缺口](docs/readme-assets/diagnosis.png) |
+
+| 模拟答辩室 | 多团队差异化 |
+| --- | --- |
+| ![模拟答辩室：评委问题与二次追问](docs/readme-assets/defense.png) | ![切换团队后的驾驶舱](docs/readme-assets/dashboard-team.png) |
+
+> 右下为同一账号切换团队后的驾驶舱。各团队的项目阶段、任务分布、评分覆盖率与答辩进度**各不相同**：图中「珠联璧合（珍珠智能分拣）」处于「赛后复盘」、评分覆盖率 73%，而「智造先锋队」处于「作品打磨」、覆盖率 60%。
+
+<details>
+<summary>展开完整截图集（教师端 9 张 · 学生端 4 张）</summary>
+
+**教师端**
+
+| 登录 | 赛项解析中心 |
+| --- | --- |
+| ![登录页](docs/readme-assets/login.png) | ![赛项解析中心](docs/readme-assets/analysis.png) |
+
+| 训练任务中心 | 作品诊断中心 |
+| --- | --- |
+| ![训练任务中心](docs/readme-assets/training.png) | ![作品诊断中心](docs/readme-assets/diagnosis.png) |
+
+| 模拟答辩室 | 赛后复盘 |
+| --- | --- |
+| ![模拟答辩室](docs/readme-assets/defense.png) | ![赛后复盘](docs/readme-assets/review.png) |
+
+| 资源知识库 | 学习记录 |
+| --- | --- |
+| ![资源知识库](docs/readme-assets/resources.png) | ![学习记录](docs/readme-assets/learning.png) |
+
+| 设置中心 |  |
+| --- | --- |
+| ![设置中心](docs/readme-assets/settings.png) |  |
+
+**学生端**
+
+学生登录后落地「我的任务」，界面与权限按角色收敛。
+
+| 我的任务 | 诊断反馈 |
+| --- | --- |
+| ![学生端我的任务](docs/readme-assets/student-tasks.png) | ![学生端诊断反馈](docs/readme-assets/student-diagnosis.png) |
+
+| 我的作品 | 模拟答辩 |
+| --- | --- |
+| ![学生端我的作品](docs/readme-assets/student-works.png) | ![学生端模拟答辩](docs/readme-assets/student-defense.png) |
+
+</details>
 
 ## 项目简介
 
-赛训智舱面向职业技能竞赛中的指导教师与学生团队，聚焦赛项材料复杂、评分点难拆解、团队任务与评价标准脱节、作品修改缺少证据依据、答辩训练随机性强等真实问题，构建覆盖“赛项理解—方案设计—原型开发—作品打磨—模拟答辩—赛后复盘”的智能备赛闭环。
+赛训智舱面向职业技能竞赛中的指导教师与学生团队，聚焦赛项材料复杂、评分点难拆解、团队任务与评价标准脱节、作品修改缺少证据依据、答辩训练随机性强等真实问题，构建覆盖「赛项理解—方案设计—原型开发—作品打磨—模拟答辩—赛后复盘」的智能备赛闭环。
 
-当前仓库为**前后端一体的可运行系统**（非静态原型），内置 8 个团队、10 个赛项项目的差异化演示数据，重点展示三个核心价值：
+当前仓库为**前后端一体的可运行系统**（非静态原型），内置 9 个团队、11 个赛项项目的差异化演示数据，重点展示三个核心价值：
 
 - 将赛项规程和评分标准转化为结构化能力点与备赛路线；
 - 将团队任务、作品材料与评分点绑定，使训练过程可追踪、可审核；
@@ -30,6 +77,10 @@
 - 赛后将训练数据、典型问题和优秀做法沉淀为下一轮可复用资源。
 
 ## 核心业务闭环
+
+<img src="docs/readme-assets/loop-assembly.gif" width="100%" alt="六阶段备赛闭环动效：散乱的数据点装配为「闭环驱动」品牌标识，六个阶段沿轨道依次点亮">
+
+动效演绎了这条闭环：素材先散落，经智能解析聚合为评分点与能力点，再依次推进阶段任务、作品证据诊断与模拟答辩，最后以赛后复盘沉淀经验并复用回解析。同一闭环的结构见下图；动效的静态版主视觉为 `docs/readme-assets/hero.svg`。
 
 ```mermaid
 flowchart LR
@@ -57,55 +108,11 @@ flowchart LR
 | 学习记录 | 记录成员学习活动、阶段成果和能力变化 |
 | 设置中心 | 管理团队、成员、ASR 语音识别配置与账号安全 |
 
-## 界面预览
+## 系统架构
 
-### 登录
+![赛训智舱系统架构：前端、API、数据层与模型层](docs/readme-assets/architecture.svg)
 
-![登录页](docs/readme-assets/login.png)
-
-### 项目总览
-
-![竞赛项目驾驶舱](docs/readme-assets/dashboard.png)
-
-### 多团队差异化
-
-同一账号可切换 8 个团队，各团队的项目阶段、任务分布、评分覆盖率与答辩进度**各不相同**（下图为「珠联璧合（珍珠智能分拣）」，阶段为「赛后复盘」、覆盖率 73%，对比上图「智造先锋队」的「作品打磨」、60%）：
-
-![团队切换后的驾驶舱](docs/readme-assets/dashboard-team.png)
-
-### 从标准解析到任务推进
-
-| 赛项解析中心 | 训练任务中心 |
-| --- | --- |
-| ![赛项解析中心](docs/readme-assets/analysis.png) | ![训练任务中心](docs/readme-assets/training.png) |
-
-### 从作品诊断到答辩训练
-
-| 作品诊断中心 | 模拟答辩室 |
-| --- | --- |
-| ![作品诊断中心](docs/readme-assets/diagnosis.png) | ![模拟答辩室](docs/readme-assets/defense.png) |
-
-### 复盘、资源与设置
-
-| 赛后复盘 | 资源知识库 |
-| --- | --- |
-| ![赛后复盘](docs/readme-assets/review.png) | ![资源知识库](docs/readme-assets/resources.png) |
-
-| 学习记录 | 设置中心 |
-| --- | --- |
-| ![学习记录](docs/readme-assets/learning.png) | ![设置中心](docs/readme-assets/settings.png) |
-
-### 学生端
-
-学生登录后落地「我的任务」，界面与权限按角色收敛。
-
-| 我的任务 | 诊断反馈 |
-| --- | --- |
-| ![学生端我的任务](docs/readme-assets/student-tasks.png) | ![学生端诊断反馈](docs/readme-assets/student-diagnosis.png) |
-
-| 我的作品 | 模拟答辩 |
-| --- | --- |
-| ![学生端我的作品](docs/readme-assets/student-works.png) | ![学生端模拟答辩](docs/readme-assets/student-defense.png) |
+前端 React 19 + Vite 6 负责页面与交互状态；NestJS 11 提供 JWT 鉴权、多租户隔离与业务数据接口，经 Prisma 6 落在 SQLite 单文件库，无需外部数据库服务；模型调用走 OpenAI 兼容协议，切换供应商只改 `AI_BASE_URL` 与 `AI_MODEL`，不改业务代码。
 
 ## 演示账号
 
@@ -118,7 +125,7 @@ flowchart LR
 | `student2` | 学生 | `创新实验队` |
 | `pearl_teacher` / `sidaopu_teacher` / `mingzhu_teacher` / `zhihuaxing_teacher` / `yihuoji_teacher` / `sheyun_teacher` | 指导教师 | 对应 6 个实例项目团队 |
 
-演示数据规模：**10 租户 / 11 赛项项目 / 41 账号**（`seed.ts` 贡献 3 团队，`seed-instance-projects.ts` 贡献 6 团队 27 账号）。
+演示数据规模：**9 租户 / 11 赛项项目 / 41 账号**（`seed.ts` 贡献 3 团队，`seed-instance-projects.ts` 贡献 6 团队 27 账号）。
 
 登录走后端 JWT 鉴权（`/api/auth/login`，支持刷新令牌续期与登出吊销）。未连接后端时自动进入 `DEMO_MODE`，展示内置示例数据，此时登录不可用。
 
@@ -147,7 +154,7 @@ flowchart LR
 
 > **即将调整**：当前是「全局单模型」配置，界面尚无模型设置入口。
 > 后续将改为**按团队配置 Base URL / API Key / 模型名称**（含分功能模型覆盖与功能开关），
-> 方案见 [大模型配置租户化方案](大模型配置租户化方案-20261004.md)。
+> 方案见 [大模型接入方案 · 权威版](大模型接入方案-权威版-20261005.md)。
 > 本节描述的是当前实现，接口与配置方式届时会变化。
 
 ```bash
@@ -181,7 +188,7 @@ cd server
 npm install
 npx prisma generate
 npx prisma migrate deploy      # 首次会创建 server/prisma/saixun.db
-npm run prisma:seed            # 灌入演示数据（10 租户 / 11 项目 / 41 账号）
+npm run prisma:seed            # 灌入演示数据（9 租户 / 11 项目 / 41 账号）
 npm run prisma:seed:instances  # 追加 6 个实例项目团队的差异化数据
 
 # 2. 启动后端（读取 server/.env 的 PORT，当前为 17100）
@@ -232,8 +239,7 @@ npm run build
 
 ```text
 saixun-web-prototype/
-├─ docs/readme-assets/       # README 界面截图
-├─ public/assets/            # 静态图片资源
+├─ docs/readme-assets/       # README 主视觉、动效、架构图与界面截图
 ├─ scripts/                  # 构建、站点准备与 WorkBuddy 发布脚本
 ├─ src/
 │  ├─ App.jsx                # 应用外壳、导航、通知与驾驶舱
@@ -244,6 +250,7 @@ saixun-web-prototype/
 │  ├─ shape.js               # 分页解包、日期格式化、阶段映射
 │  ├─ taskModel.js           # 任务状态机与展示模型转换
 │  ├─ ProgressRing.jsx       # 内联 SVG 进度环
+│  ├─ BrandLogo.jsx          # 品牌标识「闭环驱动」（内联 SVG）
 │  ├─ pages.jsx              # 教师端业务页面
 │  ├─ studentPages.jsx       # 学生端页面
 │  ├─ audio.js               # 录音转码（语音答辩共用）
@@ -275,13 +282,12 @@ saixun-web-prototype/
 
 ## 当前范围
 
-已具备：JWT 鉴权与刷新令牌续期、多租户数据隔离（8 团队 / 11 项目演示数据）、团队切换与项目级数据隔离、文件上传大小与类型限制、列表分页（统一 `{items,total,page,pageSize}` 结构）、检索增强（基于全文检索的案例沉淀库）、通知事件驱动与学习埋点、语音答辩（ASR 可在设置中心配置）。
+已具备：JWT 鉴权与刷新令牌续期、多租户数据隔离（9 团队 / 11 项目演示数据）、团队切换与项目级数据隔离、文件上传大小与类型限制、列表分页（统一 `{items,total,page,pageSize}` 结构）、检索增强（基于全文检索的案例沉淀库）、通知事件驱动与学习埋点、语音答辩（ASR 可在设置中心配置）。
 
 近期修复记录见 [问题排查清单](问题排查清单-20261003.md)（15 项界面与数据问题）。
 
-后续可进一步完善：向量检索（当前为关键词全文检索）、AI 能力配置界面（方案已设计，见 [大模型配置租户化方案](大模型配置租户化方案-20261004.md)）、设置接口的角色权限校验、前端 E2E 测试、API 文档（Swagger）与线上监控。
+后续可进一步完善：向量检索（当前为关键词全文检索）、AI 能力配置界面（方案已设计，见 [大模型接入方案 · 权威版](大模型接入方案-权威版-20261005.md)）、设置接口的角色权限校验、前端 E2E 测试、API 文档（Swagger）与线上监控。
 
 ## 许可说明
 
 本项目目前未声明开源许可证。未经许可，请勿将代码用于商业用途。
-
