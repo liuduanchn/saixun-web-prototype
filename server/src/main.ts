@@ -16,10 +16,11 @@ async function bootstrap() {
   const clientDir = process.env.CLIENT_DIR
     ? resolve(process.env.CLIENT_DIR)
     : resolve(__dirname, '..', '..', 'dist', 'client');
-  // SPA 回退目标是应用壳 app.html —— index.html 现为网站落地页，
-  // 若仍回退到它，任何深链接都会被送去落地页而不是应用。
+  // 两个入口产物：index.html 是网站首页（新版落地页），app.html 是应用壳。
+  // 根路径要落到落地页、深链接要落到应用壳，因此两者都存在才算「有前端」。
+  const indexHtml = join(clientDir, 'index.html');
   const appHtml = join(clientDir, 'app.html');
-  const hasClient = existsSync(appHtml);
+  const hasClient = existsSync(indexHtml) && existsSync(appHtml);
 
   // ── 安全头 ────────────────────────────────────────────────────────────
   // 与「纯 JSON API」时期不同：现在同一个进程还要托管前端 HTML，
@@ -50,7 +51,7 @@ async function bootstrap() {
   // 因此顺序为：helmet → 静态资源 → SPA 回退 → Nest 路由。
   if (hasClient) {
     app.useStaticAssets(clientDir, {
-      index: false, // 根路径交给下面的回退统一处理，保证 / 与深链接行为一致
+      index: false, // 根路径交给下面的回退统一处理：/ 给落地页，深链接给应用壳
       etag: true,
       setHeaders: (res, filePath) => {
         // Vite 产物带内容哈希，可长期强缓存；index.html 必须不缓存
@@ -76,9 +77,11 @@ async function bootstrap() {
     if (!hasClient) return next();
     // 看起来是静态资源（带扩展名）却没命中 → 老实 404，不要返回 HTML
     if (/\.[a-zA-Z0-9]+$/.test(reqPath)) return next();
+    // 根路径 → 网站首页（新版落地页）；其余深链接 → 应用壳，保证刷新不丢路由
+    const target = reqPath === '/' ? indexHtml : appHtml;
     res.setHeader('Cache-Control', 'no-cache');
     if (req.method === 'HEAD') return res.status(200).end();
-    return res.sendFile(appHtml);
+    return res.sendFile(target);
   });
 
   // ── CORS ──────────────────────────────────────────────────────────────
