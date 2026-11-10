@@ -51,7 +51,7 @@ export function LoginScreen({ onLogin }) {
 
       <section className="login-panel">
         <form className="login-form" onSubmit={submit}>
-          <header><span>欢迎使用</span><h2>登录赛训智舱</h2><p>{DEMO_MODE ? "演示模式：未连接后端，请使用测试账号" : "使用指导教师测试账号进入系统"}</p></header>
+          <header><span>欢迎使用</span><h2>登录赛训智舱</h2><p>{DEMO_MODE ? "演示模式：未连接后端，请使用测试账号" : "使用指导教师测试账号进入系统"}{!DEMO_MODE && <span className="login-cred">账号 teacher ｜ 密码 Saixun2026@_</span>}</p></header>
           <label><span>账号</span><div className="login-input"><User size={20} /><input aria-label="账号" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></div></label>
           <label><span>密码</span><div className="login-input"><LockKey size={20} /><input aria-label="密码" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}</button></div></label>
           {error && <p className="login-error" role="alert">{error}</p>}
